@@ -56,3 +56,17 @@ test('the real path of the temp dir is excluded too', () => {
   const real = fs.realpathSync.native(os.tmpdir());
   assert.equal(isCodeFile(real + require('node:path').sep + 'x.js', { homeDir, tmpDir: '/nowhere' }), false);
 });
+
+test('the real path of the temp dir is resolved once per process', (t) => {
+  const fs = require('node:fs');
+  const real = fs.realpathSync.native;
+  let calls = 0;
+  fs.realpathSync.native = (...args) => { calls += 1; return real(...args); };
+  t.after(() => { fs.realpathSync.native = real; });
+  const id = require.resolve('../core/codefiles.cjs');
+  delete require.cache[id];
+  const fresh = require('../core/codefiles.cjs');
+  fresh.isCodeFile('/x/a.js', { homeDir: '/h' });
+  fresh.isCodeFile('/x/b.js', { homeDir: '/h' });
+  assert.equal(calls, 1);
+});

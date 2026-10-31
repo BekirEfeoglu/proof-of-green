@@ -30,12 +30,20 @@ function globToRegExp(glob) {
 
 const matchesAny = (globs, rel) => (globs || []).some((g) => globToRegExp(g).test(rel));
 
+// Resolved on first use and kept for the process; null when it cannot be resolved.
+let realTmp;
+function realTmpDir() {
+  if (realTmp === undefined) {
+    try { realTmp = fs.realpathSync.native(os.tmpdir()); } catch { realTmp = null; }
+  }
+  return realTmp;
+}
+
 // The temp dir, plus its real path (a Windows 8.3 short temp path and its long form differ).
 function tmpRoots(tmpDir) {
   const roots = [tmpDir || os.tmpdir(), os.tmpdir()];
-  try {
-    roots.push(fs.realpathSync.native(os.tmpdir()));
-  } catch { /* the plain temp dir still applies */ }
+  const real = realTmpDir();
+  if (real) roots.push(real);
   return roots.map((r) => withSlash(normalizePath(r)));
 }
 
