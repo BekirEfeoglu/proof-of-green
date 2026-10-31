@@ -123,6 +123,7 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
   } catch { /* missing or unreadable: not installed */ }
 
   const ledgerDirs = [...new Set([
+    ...claudePluginLedgerDirs(homeDir),
     ledgerDir('claude', env, platform, homeDir),
     ledgerDir('codex', env, platform, homeDir),
   ])];
@@ -143,8 +144,23 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
   };
 }
 
+// Outside a hook CLAUDE_PLUGIN_DATA is unset, so find the plugin's data dir (named <plugin>-<marketplace>) directly.
+function claudePluginLedgerDirs(homeDir) {
+  const dataDir = path.join(homeDir, '.claude', 'plugins', 'data');
+  try {
+    return fs.readdirSync(dataDir)
+      .filter((name) => name.startsWith('proof-of-green'))
+      .map((name) => path.join(dataDir, name, 'ledgers'))
+      .filter((dir) => fs.existsSync(dir));
+  } catch {
+    return [];
+  }
+}
+
 function formatReport(r) {
-  const trust = r.codex.trusted === 'unknown' ? 'unknown (no ~/.codex/config.toml)' : r.codex.trusted ? 'yes' : 'NO - run /hooks in Codex and trust them';
+  const trust = !r.codex.installed ? 'n/a (Codex hooks not installed)'
+    : r.codex.trusted === 'unknown' ? 'unknown (no ~/.codex/config.toml)'
+    : r.codex.trusted ? 'yes' : 'NO - run /hooks in Codex and trust them';
   return [
     'proof-of-green doctor',
     `Claude Code plugin installed: ${r.claude.installed ? 'yes' : 'no'}`,

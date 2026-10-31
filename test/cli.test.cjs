@@ -148,3 +148,22 @@ test('doctor reports codex installed only when both hooks are present', (t) => {
   fs.writeFileSync(hooksFile, JSON.stringify(data));
   assert.equal(doctor(o).codex.installed, false);
 });
+
+test('doctor report does not ask to trust Codex hooks that are not installed', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  run(['doctor'], { ...opts(homeDir), out: (s) => out.push(s), err: () => {} });
+  const text = out.join('\n');
+  assert.match(text, /Codex hooks trusted: +n\/a \(Codex hooks not installed\)/);
+  assert.doesNotMatch(text, /run \/hooks/);
+});
+
+test('doctor finds the Claude plugin ledger dir and its errors without CLAUDE_PLUGIN_DATA', (t) => {
+  const homeDir = tempHome(t);
+  const dir = path.join(homeDir, '.claude', 'plugins', 'data', 'proof-of-green-proof-of-green', 'ledgers');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'errors.log'), '2026-10-31T00:00:00.000Z Error: boom\n');
+  const r = doctor(opts(homeDir));
+  assert.ok(r.ledgerDirs.includes(dir), r.ledgerDirs.join(', '));
+  assert.deepEqual(r.lastErrors, ['2026-10-31T00:00:00.000Z Error: boom']);
+});

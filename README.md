@@ -115,7 +115,7 @@ Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that proce
 - The gate blocks at most once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
 - The gate checks that a test command passed, not that the command tests the code you changed. A narrow or irrelevant test command that exits 0 satisfies it.
 - Codex hooks are experimental, and untrusted hooks are skipped without a warning. Run `doctor` after installing.
-- Claude Code is expected to report a failing shell command through PostToolUseFailure; this has not yet been checked against a live install.
+- Only shell commands (the Bash and PowerShell tools) count as test runs. If your agent runs tests through an MCP tool, for example on a remote machine, the gate does not see those runs and blocks once with "no test command ran".
 
 ## Not in scope
 
