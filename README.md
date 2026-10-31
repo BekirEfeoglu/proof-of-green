@@ -73,10 +73,10 @@ A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skip
 
 You can add your own patterns in the config file.
 
-The exit code the agent sees has to be the test's. So after the last test segment, only `&&` may follow. Anything else hides the result: `npm test; echo done`, `npm test || echo failed` and `npm test &` all don't count. Two exceptions:
+The exit code the agent sees has to be the test's. So every command after the first test command must be joined with `&&`. Anything else can hide a failure: `npm test; echo done`, `npm test || echo failed` and `npm test &` don't count, and neither do `npm test; pytest` or `npm test || npm test`, where a later run could cover up an earlier failed one. Commands before the first test don't matter, so `npm run lint; npm test` counts. Two exceptions:
 
-- A pipe after the test is fine when `set -o pipefail` ran earlier in the same command.
-- A PowerShell check right after the test, `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }`, is fine.
+- A pipe is fine while `set -o pipefail` is on. The last `set -o pipefail` or `set +o pipefail` before the pipe decides.
+- A PowerShell check at the end, `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }`, is fine. The `if` block, and any `else` block, may not contain `exit` or assign `LASTEXITCODE`.
 
 A matching command also does not count if its result is masked or faked:
 
