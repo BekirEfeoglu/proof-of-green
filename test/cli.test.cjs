@@ -280,6 +280,29 @@ test('status lists commands and allows after a passing test; caps edits at 10', 
   assert.match(text, /Would allow$/m);
 });
 
+test('status reads the newest .jsonl ledger merged with its legacy .json', (t) => {
+  const homeDir = tempHome(t);
+  const old = new Date(Date.now() - 86400000);
+  writeStatusLedger(homeDir, 'other.json', { turn: '9', nextSeq: 1, records: [] }, new Date(Date.now() - 3600000));
+  const legacy = writeStatusLedger(homeDir, 'h.json', {
+    turn: '1', nextSeq: 2, records: [{ seq: 1, turn: '1', kind: 'edit', path: 'legacy.js' }],
+  }, old);
+  const lines = [
+    { kind: 'command', command: 'npm test', isTest: true, result: 'fail' },
+    { kind: 'edit', path: 'src/new.js' },
+  ];
+  const file = legacy + 'l';
+  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const out = [];
+  run(['status', '--json'], statusIo(homeDir, out));
+  const r = JSON.parse(out[0]);
+  assert.equal(r.ledger, file);
+  assert.equal(r.turn, '1');
+  assert.deepEqual(r.edits, ['legacy.js', 'new.js']);
+  assert.deepEqual(r.commands.map((c) => [c.command, c.result]), [['npm test', 'fail']]);
+  assert.equal(r.decision.action, 'block');
+});
+
 // ---- doctor config check ----
 const goodTool = { tool: 'mcp__x__t', commandArg: 'command' };
 function cfgCtx(homeDir, cwd) { return { ...opts(homeDir), cwd }; }

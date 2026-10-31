@@ -181,7 +181,7 @@ function newestLedgerFile(dirs) {
     let names;
     try { names = fs.readdirSync(dir); } catch { continue; }
     for (const name of names) {
-      if (!name.endsWith('.json')) continue;
+      if (!/\.jsonl?$/.test(name)) continue;
       const file = path.join(dir, name);
       try {
         const st = fs.statSync(file);

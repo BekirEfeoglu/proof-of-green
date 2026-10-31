@@ -2,9 +2,9 @@
 const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
-const { readLedger, writeLedger, currentTurnRecords } = require('../core/ledger.cjs');
+const { readLedger, appendRecord, startTurn, currentTurnRecords } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
-const { push, stopResponse } = require('./common.cjs');
+const { stopResponse } = require('./common.cjs');
 const { readCommandResults } = require('./rollout.cjs');
 
 const PATCH_HEADER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/;
@@ -54,14 +54,14 @@ function parseInput(raw) {
   }
 }
 
-function recordTool(ledger, payload, cwd, config) {
+function recordTool(out, payload, cwd, config) {
   const input = parseInput(payload.tool_input);
   if (payload.tool_name === 'apply_patch') {
     let added = false;
     for (const p of parsePatchPaths(input.command)) {
       const abs = path.resolve(cwd, p);
       if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) continue;
-      push(ledger, { kind: 'edit', path: abs });
+      out.push({ kind: 'edit', path: abs });
       added = true;
     }
     return added;
@@ -70,7 +70,7 @@ function recordTool(ledger, payload, cwd, config) {
   if (listed) {
     const command = input[listed.commandArg];
     if (typeof command !== 'string') return false;
-    push(ledger, {
+    out.push({
       kind: 'command',
       command,
       via: payload.tool_name,
@@ -84,7 +84,7 @@ function recordTool(ledger, payload, cwd, config) {
     if (!command) return false;
     const record = { kind: 'command', command, isTest: isTestCommand(innerScript(input.command), config.testPatterns), result: 'unknown' };
     if (typeof payload.tool_use_id === 'string') record.id = payload.tool_use_id;
-    push(ledger, record);
+    out.push(record);
     return true;
   }
   return false;
@@ -148,7 +148,10 @@ function handleCodex(event, payload, ctx) {
   if (newTurn) ledger.turn = p.turn_id;
 
   if (event === 'post-tool') {
-    if (recordTool(ledger, p, cwd, config) || newTurn) writeLedger(dir, p.session_id, ledger);
+    if (newTurn) startTurn(dir, p.session_id, p.turn_id);
+    const out = [];
+    recordTool(out, p, cwd, config);
+    for (const record of out) appendRecord(dir, p.session_id, record);
     return {};
   }
   const records = resolveResults(currentTurnRecords(ledger), readCommandResults(p.transcript_path), ledger.records, ledger.turn);

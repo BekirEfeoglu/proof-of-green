@@ -6,7 +6,6 @@ const path = require('node:path');
 
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const TMP_MAX_AGE_MS = 3600 * 1000;
-const RENAME_ATTEMPTS = 3;
 const APP = 'proof-of-green';
 
 function ledgerDir(agent, env, platform = process.platform, homeDir = os.homedir()) {
@@ -18,10 +17,11 @@ function ledgerDir(agent, env, platform = process.platform, homeDir = os.homedir
   return path.join(e.XDG_STATE_HOME || path.join(homeDir, '.local', 'state'), APP);
 }
 
-const fileFor = (dir, sessionId) =>
-  path.join(dir, crypto.createHash('sha256').update(String(sessionId)).digest('hex') + '.json');
+const baseFor = (dir, sessionId) =>
+  path.join(dir, crypto.createHash('sha256').update(String(sessionId)).digest('hex'));
 
-function readLedgerFile(file) {
+// Legacy v0.2 format: one JSON object rewritten on every hook.
+function readJsonLedger(file) {
   const empty = { turn: '0', nextSeq: 1, records: [] };
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -34,13 +34,35 @@ function readLedgerFile(file) {
   } catch { return empty; }
 }
 
-const readLedger = (dir, sessionId) => readLedgerFile(fileFor(dir, sessionId));
+// Replays <base>.jsonl on top of the legacy <base>.json. Each record gets its seq from its
+// position and the turn in effect when it was appended; unparsable or torn lines are skipped.
+function readBase(base) {
+  const ledger = readJsonLedger(base + '.json');
+  let text;
+  try { text = fs.readFileSync(base + '.jsonl', 'utf8'); } catch { return ledger; }
+  for (const line of text.split('\n')) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    if (entry.kind === 'turn') {
+      if (typeof entry.turn === 'string') ledger.turn = entry.turn;
+    } else if (entry.kind === 'edit' || entry.kind === 'command') {
+      ledger.records.push({ ...entry, seq: ledger.nextSeq, turn: ledger.turn });
+      ledger.nextSeq += 1;
+    }
+  }
+  return ledger;
+}
+
+const readLedger = (dir, sessionId) => readBase(baseFor(dir, sessionId));
+// Either file of a session (<hash>.json or <hash>.jsonl) reads the whole merged ledger.
+const readLedgerFile = (file) => readBase(file.replace(/\.jsonl?$/, ''));
 
 function prune(dir) {
   try {
     const now = Date.now();
     for (const name of fs.readdirSync(dir)) {
-      const maxAge = name.endsWith('.json') ? MAX_AGE_MS : name.endsWith('.tmp') ? TMP_MAX_AGE_MS : null;
+      const maxAge = /\.jsonl?$/.test(name) ? MAX_AGE_MS : name.endsWith('.tmp') ? TMP_MAX_AGE_MS : null;
       if (maxAge === null) continue;
       const file = path.join(dir, name);
       try {
@@ -50,28 +72,33 @@ function prune(dir) {
   } catch { /* ignore: pruning is best effort */ }
 }
 
-// Windows can briefly lock the target (antivirus, a concurrent reader): retry before giving up.
-function renameWithRetry(from, to) {
-  for (let attempt = 1; ; attempt++) {
-    try { return fs.renameSync(from, to); } catch (err) {
-      if (attempt >= RENAME_ATTEMPTS || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err;
-    }
+// True when the file exists and its last byte is not a newline (a crash tore the last append).
+function endsTorn(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    fs.readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 10;
+  } catch { return false; } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
   }
 }
 
-function writeLedger(dir, sessionId, ledger) {
+// One appendFileSync call per line: parallel hooks each add their line instead of
+// overwriting each other's read-modify-write. May throw; callers run inside gate's fail-open catch.
+function appendLine(dir, sessionId, entry) {
   fs.mkdirSync(dir, { recursive: true });
-  const file = fileFor(dir, sessionId);
-  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(ledger));
-    renameWithRetry(tmp, file);
-  } catch (err) {
-    try { fs.unlinkSync(tmp); } catch { /* nothing to clean */ }
-    throw err;
-  }
+  const file = baseFor(dir, sessionId) + '.jsonl';
+  // Start on a fresh line after a torn append so this record is not glued onto it.
+  fs.appendFileSync(file, (endsTorn(file) ? '\n' : '') + JSON.stringify(entry) + '\n');
   prune(dir);
 }
+
+const appendRecord = (dir, sessionId, record) => appendLine(dir, sessionId, record);
+const startTurn = (dir, sessionId, turnId) => appendLine(dir, sessionId, { kind: 'turn', turn: String(turnId) });
 
 const currentTurnRecords = (ledger) => ledger.records.filter((r) => r.turn === ledger.turn);
 
@@ -109,4 +136,4 @@ function debugLog(dir, agent, event, payload) {
   } catch { /* logging must never throw */ }
 }
 
-module.exports = { ledgerDir, readLedger, readLedgerFile, writeLedger, currentTurnRecords, logError, debugLog };
+module.exports = { ledgerDir, readLedger, readLedgerFile, appendRecord, startTurn, currentTurnRecords, logError, debugLog };

@@ -16,11 +16,6 @@ function latestTestCommand(ledger) {
   return null;
 }
 
-function push(ledger, record) {
-  ledger.records.push({ seq: ledger.nextSeq, turn: ledger.turn, ...record });
-  ledger.nextSeq += 1;
-}
-
 function stopDecision(records, ledger, config, stopHookActive) {
   const latest = latestTestCommand(ledger);
   return decide(records, {
@@ -38,4 +33,4 @@ function stopResponse(records, ledger, config, payload) {
   return {};
 }
 
-module.exports = { push, stopResponse, stopDecision };
+module.exports = { stopResponse, stopDecision };

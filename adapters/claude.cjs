@@ -2,14 +2,14 @@
 const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
-const { readLedger, writeLedger, currentTurnRecords } = require('../core/ledger.cjs');
+const { readLedger, appendRecord, startTurn, currentTurnRecords } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
-const { push, stopResponse } = require('./common.cjs');
+const { stopResponse } = require('./common.cjs');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
-function recordTool(ledger, payload, cwd, config, result) {
+function recordTool(out, payload, cwd, config, result) {
   const tool = payload.tool_name;
   const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
   if (result === 'pass' && EDIT_TOOLS.has(tool)) {
@@ -17,7 +17,7 @@ function recordTool(ledger, payload, cwd, config, result) {
     if (typeof p !== 'string' || !p) return false;
     const abs = path.resolve(cwd, p);
     if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) return false;
-    push(ledger, { kind: 'edit', path: abs });
+    out.push({ kind: 'edit', path: abs });
     return true;
   }
   const listed = Array.isArray(config.testTools) ? config.testTools.find((t) => t.tool === tool) : undefined;
@@ -29,10 +29,10 @@ function recordTool(ledger, payload, cwd, config, result) {
       // command ran; an unreadable error (server unreachable) means no test ran.
       const response = typeof payload.error === 'string' ? payload.error : payload.tool_response;
       const ran = readToolExitCode(response, listed.exitCodeField) === 'fail';
-      push(ledger, { kind: 'command', command, via: tool, isTest: ran && isTestCommand(command, config.testPatterns), result: 'fail' });
+      out.push({ kind: 'command', command, via: tool, isTest: ran && isTestCommand(command, config.testPatterns), result: 'fail' });
       return true;
     }
-    push(ledger, {
+    out.push({
       kind: 'command',
       command,
       via: tool,
@@ -43,7 +43,7 @@ function recordTool(ledger, payload, cwd, config, result) {
   }
   if (SHELL_TOOLS.has(tool)) {
     if (typeof input.command !== 'string') return false;
-    push(ledger, {
+    out.push({
       kind: 'command',
       command: input.command,
       // A background run reports success when it starts, not when the tests finish.
@@ -62,21 +62,22 @@ function handleClaude(event, payload, ctx) {
   const p = payload && typeof payload === 'object' ? payload : {};
   if (typeof p.session_id !== 'string' || !p.session_id) return {};
   const cwd = typeof p.cwd === 'string' && p.cwd ? p.cwd : process.cwd();
-  const ledger = readLedger(dir, p.session_id);
 
   switch (event) {
     case 'user-prompt':
-      ledger.turn = String(Number(ledger.turn) + 1);
-      writeLedger(dir, p.session_id, ledger);
+      startTurn(dir, p.session_id, String(Number(readLedger(dir, p.session_id).turn) + 1));
       return {};
     case 'post-tool':
-    case 'post-tool-failure':
-      if (recordTool(ledger, p, cwd, config, event === 'post-tool' ? 'pass' : 'fail')) {
-        writeLedger(dir, p.session_id, ledger);
-      }
+    case 'post-tool-failure': {
+      const out = [];
+      recordTool(out, p, cwd, config, event === 'post-tool' ? 'pass' : 'fail');
+      for (const record of out) appendRecord(dir, p.session_id, record);
       return {};
-    case 'stop':
+    }
+    case 'stop': {
+      const ledger = readLedger(dir, p.session_id);
       return stopResponse(currentTurnRecords(ledger), ledger, config, p);
+    }
     default:
       return {};
   }
