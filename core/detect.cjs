@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const BUILTIN_TEST_PATTERNS = [
-  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::\S+)?(?:\s|$)/,
+  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:[:_-]\S+)?(?:\s|$)/,
   /^npm\s+t(?:\s|$)/,
   /^(?:npx|bunx|bun\s+x|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+dlx)?)\s+(?:vitest|jest|mocha|playwright\s+test)\b/,
   /^(?:(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+)?pytest\b/,

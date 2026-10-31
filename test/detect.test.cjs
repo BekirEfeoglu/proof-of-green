@@ -104,3 +104,10 @@ test('suggestTestCommand: .sln', () =>
   withDir({ 'x.sln': '' }, (d) => assert.equal(suggestTestCommand(d), 'dotnet test')));
 test('suggestTestCommand: empty dir', () =>
   withDir({}, (d) => assert.equal(suggestTestCommand(d), null)));
+
+test('test script names with a -, _ or : suffix count; look-alike names do not', () => {
+  for (const c of ['npm run test-e2e', 'npm run test_unit', 'pnpm test:ci', 'yarn run test-watch']) {
+    assert.equal(isTestCommand(c), true, c);
+  }
+  for (const c of ['npm run testing', 'npm run attest']) assert.equal(isTestCommand(c), false, c);
+});
