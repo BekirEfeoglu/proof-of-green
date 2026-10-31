@@ -36,7 +36,7 @@ The npm package is not published yet, so run the installer straight from GitHub:
 npx github:BekirEfeoglu/proof-of-green install codex
 ```
 
-This copies the gate into Codex's state folder and adds two hooks (`PostToolUse` and `Stop`) to `~/.codex/hooks.json`. Codex skips new hooks until you trust them, so open `/hooks` in Codex and trust the proof-of-green entries. Then check the result:
+This copies the gate into Codex's state folder and adds two hooks (`PostToolUse` and `Stop`) to `~/.codex/hooks.json`. Codex skips new hooks until you trust them, so open `/hooks` in Codex and trust the proof-of-green entries. Upgrading from 0.1 changes the `PostToolUse` hook in place, so Codex asks you to trust it again in `/hooks`. Then check the result:
 
 ```
 npx github:BekirEfeoglu/proof-of-green doctor
@@ -71,7 +71,7 @@ A shell command counts when one of its segments, split on `&&`, `||`, `;`, `|`, 
 
 A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. `hatch run test` does not, because `test` there is a script name the gate can't see into. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first.
 
-You can add your own patterns in the config file.
+You can add your own patterns in the config file. Tests that run through an MCP tool are covered in the next section.
 
 The exit code the agent sees has to be the test's. So every command after the first test command must be joined with `&&`. Anything else can hide a failure: `npm test; echo done`, `npm test || echo failed` and `npm test &` don't count, and neither do `npm test; pytest` or `npm test || npm test`, where a later run could cover up an earlier failed one. Commands before the first test don't matter, so `npm run lint; npm test` counts. Two exceptions:
 
@@ -86,16 +86,35 @@ A matching command also does not count if its result is masked or faked:
 
 An edit counts when the file has a code extension (`.js`, `.ts`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.sql`, `.vue` and a few dozen more; the full list is in `core/codefiles.cjs`). Files under `node_modules`, `.git`, the OS temp folder, `~/.claude` and `~/.codex` never count.
 
+## Tests that run through MCP tools
+
+Some agents run tests through an MCP tool instead of a shell, for example on a remote machine. List those tools in your user config, `~/.proof-of-green.json`, and the gate counts their runs:
+
+```json
+{
+  "testTools": [
+    { "tool": "mcp__uzak_sunucu__sunucu_komut_calistir", "commandArg": "komut" }
+  ]
+}
+```
+
+- `tool`: the full tool name. It must start with `mcp__`; other names are ignored.
+- `commandArg`: the name of the tool argument that holds the command line.
+- `exitCodeField`: optional. The field in the tool's JSON response that holds the exit code. The default is `exit_code`. A dotted path such as `result.exit_code` reaches into nested objects.
+
+The command in that argument goes through the same rules as a shell command: it has to look like a test, and anything after the first test command must be joined with `&&`. The tool's response must be JSON that carries the exit code, either as the response itself or as the text of its first text block. Exit code 0 is a pass and any other integer is a fail. If the gate cannot read the exit code, the stop is allowed with a note that the result could not be verified.
+
 ## Configuration
 
-Everything is optional. To change the defaults, put a `.proof-of-green.json` in your project. The gate looks for it from the agent's working directory up to the git root. If there is no git root above the working directory, only a `.proof-of-green.json` in the working directory itself is read.
+Everything is optional. There are two files, both named `.proof-of-green.json`: one in your home folder (user level) and one in your project. The gate looks for the project file from the agent's working directory up to the git root. If there is no git root above the working directory, only a `.proof-of-green.json` in the working directory itself is read. If the project file is the home-folder file, it is read once.
 
 ```json
 {
   "enabled": true,
   "testCommands": ["^make verify$", "^\\./scripts/test\\.sh"],
   "include": ["scripts/**/*.sh"],
-  "exclude": ["generated/**"]
+  "exclude": ["generated/**"],
+  "testTools": []
 }
 ```
 
@@ -103,8 +122,11 @@ Everything is optional. To change the defaults, put a `.proof-of-green.json` in 
 - `testCommands`: extra regular expressions, matched against each command segment.
 - `include`: globs for extra files that count as code.
 - `exclude`: globs for files that never count. Exclusions win over `include`.
+- `testTools`: MCP tools that run tests, described above.
 
 Globs are matched against the path relative to the project root. A pattern without a slash, such as `*.gen.ts`, only matches files at the root; use `**/*.gen.ts` for any depth.
+
+When both files exist they are merged. The project's `enabled` wins when it sets one; otherwise the user's `false` still turns the gate off. `testCommands`, `include`, `exclude` and `testTools` are concatenated, user entries first. A `testTools` entry in the project with the same `tool` as a user entry replaces it.
 
 Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that process.
 
@@ -115,7 +137,7 @@ Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that proce
 - The gate blocks at most once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
 - The gate checks that a test command passed, not that the command tests the code you changed. A narrow or irrelevant test command that exits 0 satisfies it.
 - Codex hooks are experimental, and untrusted hooks are skipped without a warning. Run `doctor` after installing.
-- Only shell commands (the Bash and PowerShell tools) count as test runs. If your agent runs tests through an MCP tool, for example on a remote machine, the gate does not see those runs and blocks once with "no test command ran".
+- The gate cannot tell whether a remote copy of the code is current when a test runs there.
 
 ## Not in scope
 

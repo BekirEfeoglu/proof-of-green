@@ -1,5 +1,7 @@
 # proof-of-green: design
 
+Updated 2026-11-01 to match the shipped behavior.
+
 Date: 2026-10-31
 Status: draft, awaiting review
 
@@ -94,7 +96,8 @@ A shell command counts as a test when one of its segments (split on `&&`, `;`, `
 A command does not count when its result is masked or faked:
 
 - `|| true`, `|| :`, `; exit 0`, or `|| exit 0` anywhere in the command.
-- The test segment piped into another command without `set -o pipefail` (the pipe's exit code is the last command's).
+- Every separator after the first test segment must be `&&`. A pipe is allowed only after an earlier `set -o pipefail`. The one other exception is a narrow PowerShell tail, `; if ($?) {...}` or `; if ($LASTEXITCODE -eq 0) {...}`, with no `else` and no `exit` or `LASTEXITCODE` assignment in the body.
+- Background runs never count.
 - No test segment at all, for example `echo "tests passed"`.
 
 ### Code files
@@ -134,7 +137,7 @@ Optional file `.proof-of-green.json` at the project root (found by walking up fr
 ## Distribution
 
 - Repository `BekirEfeoglu/proof-of-green`, MIT license.
-- Claude Code: the repository is also a marketplace. `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `hooks/hooks.json` at the root. Install with `claude plugin marketplace add BekirEfeoglu/proof-of-green`, then `claude plugin install proof-of-green@proof-of-green`. Hook commands use the exec form `node ${CLAUDE_PLUGIN_ROOT}/gate.cjs claude <event>`.
+- Claude Code: the repository is also a marketplace. `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `hooks/hooks.json` at the root. Install with `claude plugin marketplace add BekirEfeoglu/proof-of-green`, then `claude plugin install proof-of-green@proof-of-green`. Hook commands use the string form `node "${CLAUDE_PLUGIN_ROOT}/gate.cjs" claude <event>`.
 - Codex: `npx proof-of-green install codex` merges entries into `~/.codex/hooks.json`, keeping the command text byte-identical across releases so Codex trust survives updates, then tells the user to trust the hooks in `/hooks`.
 - `npx proof-of-green doctor` reports which hooks are installed, whether Codex has trusted them, the ledger folder, and the last errors.
 - The npm package carries only the installer and doctor; hooks run from the installed files with no npm dependency at runtime.
