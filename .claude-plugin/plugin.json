@@ -1,0 +1,8 @@
+{
+  "name": "proof-of-green",
+  "version": "0.1.0",
+  "description": "Blocks Claude Code from ending a turn when code changed and no test passed after the last change.",
+  "author": { "name": "Bekir Efeoğlu" },
+  "license": "MIT",
+  "repository": "https://github.com/BekirEfeoglu/proof-of-green"
+}
