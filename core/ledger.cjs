@@ -88,14 +88,25 @@ function trimErrorLog(file) {
   } catch { /* a missing or unreadable log is simply appended to */ }
 }
 
-function logError(dir, err) {
+function appendCappedLog(dir, name, text) {
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const text = err && err.stack ? err.stack : String(err);
-    const file = path.join(dir, 'errors.log');
+    const file = path.join(dir, name);
     trimErrorLog(file);
-    fs.appendFileSync(file,`${new Date().toISOString()} ${text}\n`);
+    fs.appendFileSync(file, `${new Date().toISOString()} ${text}\n`);
   } catch { /* logging must never throw */ }
 }
 
-module.exports = { ledgerDir, readLedger, readLedgerFile, writeLedger, currentTurnRecords, logError };
+function logError(dir, err) {
+  appendCappedLog(dir, 'errors.log', err && err.stack ? err.stack : String(err));
+}
+
+const DEBUG_PAYLOAD_MAX = 4096;
+
+function debugLog(dir, agent, event, payload) {
+  try {
+    appendCappedLog(dir, 'debug.log', `${agent} ${event} ${JSON.stringify(payload).slice(0, DEBUG_PAYLOAD_MAX)}`);
+  } catch { /* logging must never throw */ }
+}
+
+module.exports = { ledgerDir, readLedger, readLedgerFile, writeLedger, currentTurnRecords, logError, debugLog };

@@ -226,3 +226,30 @@ test('codex: listed MCP test tool decides stop without a rollout file', (t) => {
   s.run('post-tool', mcp(0));
   assert.equal(s.run('stop', { transcript_path: null }).out, '{}');
 });
+
+test('PROOF_OF_GREEN_DEBUG=1 logs one line per event and leaves stdout unchanged', (t) => {
+  const s = setup(t);
+  const log = path.join(s.data, 'ledgers', 'debug.log');
+  const plain = [s.run('user-prompt', {}).out, s.run('post-tool', edit).out, s.run('stop', {}).out];
+  assert.equal(fs.existsSync(log), false);
+  const dbg = { PROOF_OF_GREEN_DEBUG: '1' };
+  const withDebug = [s.run('user-prompt', {}, dbg).out, s.run('post-tool', edit, dbg).out];
+  s.run('stop', {}, dbg);
+  const lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /^\d{4}-\d\d-\d\dT[\d:.]+Z claude user-prompt \{/);
+  assert.match(lines[1], / claude post-tool \{.*a\.ts/);
+  assert.match(lines[2], / claude stop /);
+  assert.deepEqual(withDebug, plain.slice(0, 2));
+});
+
+test('PROOF_OF_GREEN_DEBUG truncates the payload to 4096 chars and is off by default', (t) => {
+  const s = setup(t);
+  const log = path.join(s.data, 'ledgers', 'debug.log');
+  const big = { tool_name: 'Bash', tool_input: { command: 'x'.repeat(10000) } };
+  s.run('post-tool', big);
+  assert.equal(fs.existsSync(log), false);
+  s.run('post-tool', big, { PROOF_OF_GREEN_DEBUG: '1' });
+  const line = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean)[0];
+  assert.ok(line.length < 4096 + 100, String(line.length));
+});

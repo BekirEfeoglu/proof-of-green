@@ -229,3 +229,16 @@ test('errors.log under the limit is left alone', (t) => {
   logError(d, 'b');
   assert.equal(fs.readFileSync(path.join(d, 'errors.log'), 'utf8').split('\n').filter(Boolean).length, 2);
 });
+
+test('debug.log is never pruned and is trimmed like errors.log', (t) => {
+  const d = mk(t);
+  const { debugLog } = require('../core/ledger.cjs');
+  debugLog(d, 'claude', 'stop', { a: 1 });
+  const log = path.join(d, 'debug.log');
+  fs.utimesSync(log, daysAgo(30), daysAgo(30));
+  writeLedger(d, 's', EMPTY);
+  assert.equal(fs.existsSync(log), true);
+  fs.writeFileSync(log, ('y'.repeat(99) + '\n').repeat(700));
+  debugLog(d, 'claude', 'stop', {});
+  assert.ok(fs.statSync(log).size < 40 * 1024);
+});
