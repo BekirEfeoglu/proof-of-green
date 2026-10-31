@@ -360,11 +360,22 @@ test('subagent-stop does not count tests run by the parent or other agents', (t)
   assert.doesNotMatch(out.reason, /parent|other/);
 });
 
-test('subagent-stop ignores the agent records of an earlier turn', (t) => {
+test('subagent-stop of a background agent still sees its edits from an earlier parent turn', (t) => {
   const s = setup(t);
   s.send('user-prompt', {});
   s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
   s.send('user-prompt', {});
+  const out = s.send('subagent-stop', asAgent(AGENT, {}));
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /a\.ts/);
+});
+
+test('subagent-stop allows when its test in a later parent turn follows its edit', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
   assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, {})), {});
 });
 

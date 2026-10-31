@@ -93,12 +93,13 @@ function handleClaude(event, payload, ctx) {
       return stopResponse(currentTurnRecords(ledger), ledger, config, p);
     }
     case 'subagent-stop': {
-      // Judge the subagent on its own records only; the parent's stop still sees all of them.
+      // Judge the subagent on all of its own records, whatever the parent's turn: a background
+      // subagent can outlive the turn that started it. decide() compares its last edit with later tests.
       const agent = agentIdOf(p);
       if (p.stop_hook_active === true || !agent) return {};
       const ledger = readLedger(dir, p.session_id);
       const own = { ...ledger, records: ledger.records.filter((r) => r.agent === agent) };
-      return stopResponse(currentTurnRecords(own), own, config, p);
+      return stopResponse(own.records, own, config, p);
     }
     default:
       return {};
