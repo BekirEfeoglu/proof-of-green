@@ -57,6 +57,14 @@ At each stop, looking only at the current turn:
 
 Any error inside the gate allows the stop and is appended to `errors.log` next to the ledgers. The gate should never trap a session.
 
+## Subagents
+
+Claude Code only. Each subagent is checked when it stops (`SubagentStop`), using only the edits and test runs it made itself in the current turn. A subagent that changed code without a passing test run afterwards is blocked once, the same way the main session is, and the suggested command is the last test command that subagent ran. Tests run by the main session or by another subagent do not count for it.
+
+The main session's stop still looks at every edit in the turn, its subagents' included, so changes a subagent left untested still block the main session.
+
+Codex subagents are not gated separately.
+
 ## What counts as a test
 
 A shell command counts when one of its segments, split on `&&`, `||`, `;`, `|`, `&` and newlines, starts with a built-in test command:
@@ -133,7 +141,7 @@ Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that proce
 ## Known limits
 
 - Codex does not put exit codes in its hook payloads. The gate reads them from Codex's session log (the rollout file), whose format is undocumented and may change. If the log can't be read, the stop is allowed with a note that the result could not be verified.
-- Claude Code subagent stops are not gated separately. Only the main session's Stop is checked.
+- Codex subagent stops are not gated separately. Only the main session's Stop is checked.
 - The gate blocks at most once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
 - The gate checks that a test command passed, not that the command tests the code you changed. A narrow or irrelevant test command that exits 0 satisfies it.
 - Codex hooks are experimental, and untrusted hooks are skipped without a warning. Run `doctor` after installing.
