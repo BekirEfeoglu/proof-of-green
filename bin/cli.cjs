@@ -10,6 +10,7 @@ const { stopDecision } = require('../adapters/common.cjs');
 const PKG_ROOT = path.join(__dirname, '..');
 const TRUST_NOTE =
   'Codex skips new hooks until you trust them: run /hooks in Codex and trust the proof-of-green hooks.';
+const CODEX_NOTE = 'Note: Codex results are read from the session log only at Stop, so this verdict may differ.';
 const USAGE = 'Usage: proof-of-green install codex | doctor [--json] | status [--json]';
 
 const toSlash = (p) => p.replace(/\\/g, '/');
@@ -215,6 +216,7 @@ function status({ homeDir = os.homedir(), env = process.env, platform = process.
     edits: names,
     commands,
     decision: stopDecision(records, ledger, { enabled: true, root: config.root }, false),
+    ...(commands.some((c) => c.result === 'unknown' && !c.via) ? { note: CODEX_NOTE } : {}),
   };
 }
 
@@ -233,6 +235,7 @@ function formatStatus(r) {
     r.commands.length ? 'Commands this turn:' : 'Commands this turn: none',
     ...r.commands.map((c) => `  ${c.command} [${c.isTest ? 'test' : 'not a test'}] result=${c.result || 'none'}${c.via ? ` via=${c.via}` : ''}`),
     verdict,
+    ...(r.note ? [r.note] : []),
   ].join('\n');
 }
 
@@ -283,7 +286,8 @@ function run(argv, io) {
     }
     if (cmd === 'status') {
       const r = status(ctx);
-      io.out(r && argv.includes('--json') ? JSON.stringify(r, null, 2) : formatStatus(r));
+      const json = argv.includes('--json');
+      io.out(json ? JSON.stringify(r || { ledger: null }, null, 2) : formatStatus(r));
       return 0;
     }
   } catch (err) {

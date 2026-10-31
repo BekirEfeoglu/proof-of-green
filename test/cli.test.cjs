@@ -393,3 +393,48 @@ test('doctor report says missing for absent configs', (t) => {
   assert.match(text, /User config: .*\(missing\)/);
   assert.match(text, /Project config: none \(missing\)/);
 });
+
+// ---- status: no-ledger JSON and Codex note ----
+const CODEX_NOTE = 'Note: Codex results are read from the session log only at Stop, so this verdict may differ.';
+
+test('status --json without a ledger prints {"ledger":null}', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  assert.equal(run(['status', '--json'], statusIo(homeDir, out)), 0);
+  assert.deepEqual(JSON.parse(out.join('\n')), { ledger: null });
+  assert.equal(out.join('\n').replace(/\s/g, ''), '{"ledger":null}');
+});
+
+test('status adds the Codex note when a command result is unknown without via', (t) => {
+  const homeDir = tempHome(t);
+  writeStatusLedger(homeDir, 'u.json', {
+    turn: '1', nextSeq: 3,
+    records: [
+      { seq: 1, turn: '1', kind: 'edit', path: 'a.js' },
+      { seq: 2, turn: '1', kind: 'command', command: 'npm test', isTest: true, result: 'unknown' },
+    ],
+  });
+  const text = [];
+  run(['status'], statusIo(homeDir, text));
+  assert.ok(text.join('\n').split('\n').includes(CODEX_NOTE));
+  const json = [];
+  run(['status', '--json'], statusIo(homeDir, json));
+  assert.equal(JSON.parse(json[0]).note, CODEX_NOTE);
+});
+
+test('status has no Codex note when results are known or unknown with via', (t) => {
+  const homeDir = tempHome(t);
+  writeStatusLedger(homeDir, 'k.json', {
+    turn: '1', nextSeq: 3,
+    records: [
+      { seq: 1, turn: '1', kind: 'command', command: 'npm test', isTest: true, result: 'pass' },
+      { seq: 2, turn: '1', kind: 'command', command: 'x', isTest: true, result: 'unknown', via: 'mcp__x__t' },
+    ],
+  });
+  const text = [];
+  run(['status'], statusIo(homeDir, text));
+  assert.doesNotMatch(text.join('\n'), /Codex results/);
+  const json = [];
+  run(['status', '--json'], statusIo(homeDir, json));
+  assert.equal('note' in JSON.parse(json[0]), false);
+});
