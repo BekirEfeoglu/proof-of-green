@@ -228,3 +228,19 @@ test('a patch with move and delete headers records every code path and stop bloc
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /old\.go/);
 });
+
+test('shell wrappers are unwrapped before detection, for argv arrays and strings', (t) => {
+  const s = setup(t);
+  s.send('post-tool', bash(['bash', '-lc', 'npm test'], 'a1'));
+  s.send('post-tool', bash(['/bin/zsh', '-lc', 'npm test; echo done'], 'a2'));
+  s.send('post-tool', bash('bash -lc "npm test"', 's1'));
+  s.send('post-tool', bash("sh -c 'pytest -q || true'", 's2'));
+  s.send('post-tool', bash('pwsh -Command "npm test"', 's3'));
+  s.send('post-tool', bash('powershell.exe -Command "go test ./..."', 's4'));
+  s.send('post-tool', bash('bash -c "echo npm test"', 's5'));
+  const records = s.ledger().records;
+  assert.deepEqual(records.map((r) => [r.id, r.isTest]), [
+    ['a1', true], ['a2', false], ['s1', true], ['s2', false], ['s3', true], ['s4', true], ['s5', false],
+  ]);
+  assert.equal(records[0].command, 'bash -lc npm test');
+});

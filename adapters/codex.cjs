@@ -23,6 +23,25 @@ const commandText = (c) =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.filter((a) => typeof a === 'string').join(' ') : null;
 const normalize = (s) => String(s).trim().replace(/\s+/g, ' ');
 
+// Codex often runs `bash -lc "<script>"`; detection must look at the script, not the wrapper.
+const SHELL = /^(?:\S*[\\/])?(?:bash|zsh|sh|pwsh|powershell)(?:\.exe)?$/i;
+const SCRIPT_FLAG = /^(?:-l?c|-Command)$/i;
+const STRING_WRAPPER = /^(?:\S*[\\/])?(?:(?:bash|zsh|sh)(?:\.exe)?\s+-l?c|(?:pwsh|powershell)(?:\.exe)?\s+-Command)\s+([\s\S]+)$/i;
+
+function innerScript(c) {
+  if (Array.isArray(c)) {
+    const n = c.length;
+    if (n >= 3 && SHELL.test(c[0]) && SCRIPT_FLAG.test(c[n - 2]) && typeof c[n - 1] === 'string') return c[n - 1];
+    return commandText(c);
+  }
+  const m = typeof c === 'string' && STRING_WRAPPER.exec(c.trim());
+  if (!m) return commandText(c);
+  const rest = m[1].trim();
+  if (/^'[^']*'$/.test(rest)) return rest.slice(1, -1);
+  if (/^"(?:[^"\\]|\\.)*"$/.test(rest)) return rest.slice(1, -1).replace(/\\(["\\$`])/g, '$1');
+  return rest;
+}
+
 function recordTool(ledger, payload, cwd, config) {
   const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
   if (payload.tool_name === 'apply_patch') {
@@ -38,7 +57,7 @@ function recordTool(ledger, payload, cwd, config) {
   if (payload.tool_name === 'Bash') {
     const command = commandText(input.command);
     if (!command) return false;
-    const record = { kind: 'command', command, isTest: isTestCommand(command, config.testPatterns), result: 'unknown' };
+    const record = { kind: 'command', command, isTest: isTestCommand(innerScript(input.command), config.testPatterns), result: 'unknown' };
     if (typeof payload.tool_use_id === 'string') record.id = payload.tool_use_id;
     push(ledger, record);
     return true;
