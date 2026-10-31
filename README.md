@@ -59,23 +59,30 @@ Any error inside the gate allows the stop and is appended to `errors.log` next t
 
 ## What counts as a test
 
-A shell command counts when one of its segments, split on `&&`, `||`, `;` and newlines, starts with a built-in test command:
+A shell command counts when one of its segments, split on `&&`, `||`, `;`, `|`, `&` and newlines, starts with a built-in test command:
 
-- `npm`, `pnpm`, `yarn` or `bun` with `test` or `run test` (including `test:unit` style scripts)
-- `npx vitest`, `npx jest`, `npx mocha`
-- `pytest`, `python -m pytest`, `python -m unittest`
-- `go test`, `cargo test`, `cargo nextest`, `dotnet test`
-- `mvn`, `./mvnw`, `gradle` or `./gradlew` with `test` or `verify`
+- `npm`, `pnpm`, `yarn` or `bun` with `test` or `run test` (including `test:unit` style scripts), and `npm t`
+- `vitest`, `jest`, `mocha` or `playwright test` through `npx`, `bunx`, `pnpm`, `pnpm exec` or `yarn`
+- `pytest`, `python -m pytest`, `python -m unittest`, also through `py` or `py -3`
+- `go test`, `cargo test`, `cargo nextest`, `dotnet test`, `deno test`
+- `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test` or `verify`
 - `make test`, `make check`
 - `rspec`, `phpunit`, `mix test`
 
+A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. `hatch run test` does not, because `test` there is a script name the gate can't see into. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first.
+
 You can add your own patterns in the config file.
 
-A matching command does not count if its result is masked or faked:
+The exit code the agent sees has to be the test's. So after the last test segment, only `&&` may follow. Anything else hides the result: `npm test; echo done`, `npm test || echo failed` and `npm test &` all don't count. Two exceptions:
+
+- A pipe after the test is fine when `set -o pipefail` ran earlier in the same command.
+- A PowerShell check right after the test, `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }`, is fine.
+
+A matching command also does not count if its result is masked or faked:
 
 - `|| true`, `|| :`, `|| exit 0` or `; exit 0` anywhere in the command.
-- The test is piped into another command without `set -o pipefail`, because the pipe then reports the last command's exit code.
 - No test segment at all, such as `echo "tests passed"`.
+- On Claude Code, a shell call run with `run_in_background`. Its success only means the command started.
 
 An edit counts when the file has a code extension (`.js`, `.ts`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.sql`, `.vue` and a few dozen more; the full list is in `core/codefiles.cjs`). Files under `node_modules`, `.git`, the OS temp folder, `~/.claude` and `~/.codex` never count.
 
@@ -108,6 +115,7 @@ Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that proce
 - The gate blocks at most once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
 - The gate checks that a test command passed, not that the command tests the code you changed. A narrow or irrelevant test command that exits 0 satisfies it.
 - Codex hooks are experimental, and untrusted hooks are skipped without a warning. Run `doctor` after installing.
+- Claude Code is expected to report a failing shell command through PostToolUseFailure; this has not yet been checked against a live install.
 
 ## Not in scope
 
