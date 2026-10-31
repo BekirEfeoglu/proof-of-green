@@ -2,7 +2,10 @@
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-const ERROR_PREFIX = /^\s*Error:\s*/;
+const ERROR_PREFIX = /^\s*error:\s*/i;
+
+const flagged = (v) => v === true || v === 1 || v === 'true';
+const isErrorResult = (v) => isObject(v) && (flagged(v.isError) || flagged(v.is_error));
 
 // Returns { value, isError }: text prefixed "Error: " is an error result whose rest is parsed.
 function parseText(text) {
@@ -34,10 +37,11 @@ function readToolExitCode(response, field = 'exit_code') {
     let { value, isError } = responseValue(response);
     // An MCP CallToolResult wrapper: an error result is never a pass, and the payload sits
     // in the first text block of `content`.
-    if (isObject(value) && (value.isError === true || value.is_error === true)) return 'fail';
+    if (isErrorResult(value)) return 'fail';
     let code = walk(value, field);
     if (code === undefined && isObject(value) && Array.isArray(value.content)) {
       const inner = responseValue(value.content);
+      if (isErrorResult(inner.value)) return 'fail';
       code = walk(inner.value, field);
       isError = isError || inner.isError;
     }

@@ -96,3 +96,23 @@ test('a JSON string of a CallToolResult wrapper is handled the same way', () => 
   assert.equal(readToolExitCode(JSON.stringify(wrapper(1))), 'fail');
   assert.equal(readToolExitCode(JSON.stringify(wrapper(0, { isError: true }))), 'fail');
 });
+
+test('isError truthy forms (true, "true", 1) are a fail', () => {
+  assert.equal(readToolExitCode(wrapper(0, { isError: 'true' })), 'fail');
+  assert.equal(readToolExitCode(wrapper(0, { isError: 1 })), 'fail');
+  assert.equal(readToolExitCode(wrapper(0, { is_error: 'true' })), 'fail');
+  assert.equal(readToolExitCode(wrapper(0, { is_error: 1 })), 'fail');
+  assert.equal(readToolExitCode(wrapper(0, { isError: false })), 'pass');
+});
+
+test('an isError flag inside the unwrapped content text is a fail', () => {
+  const inner = (o) => ({ content: [textBlock(JSON.stringify(o))] });
+  assert.equal(readToolExitCode(inner({ isError: true, exit_code: 0 })), 'fail');
+  assert.equal(readToolExitCode(inner({ is_error: 'true', exit_code: 0 })), 'fail');
+  assert.equal(readToolExitCode(inner({ isError: true, content: [textBlock('{"exit_code":0}')] })), 'fail');
+});
+
+test('the Error: prefix is case-insensitive', () => {
+  assert.equal(readToolExitCode(`error: ${liveErrorJson(0)}`), 'fail');
+  assert.equal(readToolExitCode(`ERROR: ${liveErrorJson(0)}`), 'fail');
+});
