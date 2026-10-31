@@ -28,7 +28,16 @@ test('only && after the last test, or a PowerShell $? check, keeps it', () => {
     'npm run lint; npm test', 'set -euo pipefail; npm test | tail', 'npm test\n', 'npm test && pytest'];
   for (const c of kept) assert.equal(isTestCommand(c), true, c);
 });
-test('pipefail keeps a piped test',() => assert.equal(isTestCommand('set -o pipefail; npm test | tail -5'), true));
+test('recognizes common runner wrappers', () => {
+  const runners = ['uv run pytest', 'poetry run pytest -q', 'pipenv run pytest', 'hatch run python -m pytest',
+    'pdm run python -m unittest', 'py -m pytest', 'py -3 -m pytest', '.\\gradlew test', '.\\mvnw test',
+    'pnpm vitest run', 'yarn jest', 'pnpm exec vitest', 'bunx vitest', 'npx playwright test', 'npm t',
+    'deno test', 'bun run test'];
+  for (const c of runners) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['uv run python app.py', 'npm install', 'pnpm build', 'hatch run test', 'npm tag'])
+    assert.equal(isTestCommand(c), false, c);
+});
+test('pipefail keeps a piped test', () => assert.equal(isTestCommand('set -o pipefail; npm test | tail -5'), true));
 test('extra patterns', () => assert.equal(isTestCommand('make verify', [/^make verify$/]), true));
 test('env assignment prefix is stripped', () => assert.equal(isTestCommand('CI=1 npm test'), true));
 test('isMasked flags masking forms', () => {

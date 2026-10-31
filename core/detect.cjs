@@ -4,13 +4,15 @@ const path = require('node:path');
 
 const BUILTIN_TEST_PATTERNS = [
   /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::\S+)?(?:\s|$)/,
-  /^npx\s+(?:vitest|jest|mocha)\b/,
-  /^(?:python3?\s+-m\s+)?pytest\b/,
-  /^python3?\s+-m\s+unittest\b/,
+  /^npm\s+t(?:\s|$)/,
+  /^(?:npx|bunx|bun\s+x|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+dlx)?)\s+(?:vitest|jest|mocha|playwright\s+test)\b/,
+  /^(?:(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+)?pytest\b/,
+  /^(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+unittest\b/,
   /^go\s+test\b/,
   /^cargo\s+(?:test|nextest)\b/,
   /^dotnet\s+test\b/,
-  /^(?:mvn|\.\/mvnw|gradle|\.\/gradlew)\s+(?:test|verify)\b/,
+  /^deno\s+test\b/,
+  /^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))\s+(?:test|verify)\b/,
   /^make\s+(?:test|check)\b/,
   /^(?:rspec|phpunit)\b/,
   /^mix\s+test\b/,
@@ -18,6 +20,8 @@ const BUILTIN_TEST_PATTERNS = [
 
 const stripQuotes = (s) => s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
 const stripEnv = (s) => s.replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, '');
+// Python project runners wrap the real command: `uv run pytest` is checked as `pytest`.
+const stripRunner = (s) => s.replace(/^(?:uv|poetry|pipenv|hatch|pdm)\s+run\s+/, '');
 
 // Separators: &&, ||, ;, newline, | and a lone & (not part of 2>&1 or &>).
 const SEPARATOR = /(&&|\|\||\r?\n|;|\||(?<![<>&])&(?![>&]))/;
@@ -28,7 +32,7 @@ const PIPEFAIL = /^set\s+-[A-Za-z]*o\s+pipefail\b/;
 // Alternating [segment, separator, segment, ...] of the quote-stripped command.
 function split(command) {
   const flat = stripQuotes(command).replace(PS_RESULT_CHECK, '').replace(/[\s;]+$/, '');
-  return flat.split(SEPARATOR).map((s, i) => (i % 2 ? s.replace('\r', '') : stripEnv(s.trim())));
+  return flat.split(SEPARATOR).map((s, i) => (i % 2 ? s.replace('\r', '') : stripRunner(stripEnv(s.trim()))));
 }
 
 const segments = (command) => split(command).filter((_, i) => i % 2 === 0);
