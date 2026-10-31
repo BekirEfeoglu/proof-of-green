@@ -32,6 +32,8 @@ function toTestTools(list) {
   for (const e of list) {
     if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
     if (!nonEmpty(e.tool) || !nonEmpty(e.commandArg)) continue;
+    // Only MCP tools: listing Bash, PowerShell or Edit would bypass their shell-specific rules.
+    if (!e.tool.startsWith('mcp__')) continue;
     out.push({
       tool: e.tool,
       commandArg: e.commandArg,

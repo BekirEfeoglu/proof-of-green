@@ -130,32 +130,32 @@ test('lists concatenate user first, then project', () => {
 
 test('project testTools entry replaces the user entry with the same tool', () => {
   const d = proj(); const home = mk();
-  write(home, JSON.stringify({ testTools: [tool('a', 'cmd'), tool('b', 'cmd')] }));
-  write(d, JSON.stringify({ testTools: [tool('a', 'script', 'rc'), tool('c', 'cmd')] }));
+  write(home, JSON.stringify({ testTools: [tool('mcp__a', 'cmd'), tool('mcp__b', 'cmd')] }));
+  write(d, JSON.stringify({ testTools: [tool('mcp__a', 'script', 'rc'), tool('mcp__c', 'cmd')] }));
   assert.deepEqual(loadConfig(d, {}, home).testTools, [
-    { tool: 'b', commandArg: 'cmd', exitCodeField: 'exit_code' },
-    { tool: 'a', commandArg: 'script', exitCodeField: 'rc' },
-    { tool: 'c', commandArg: 'cmd', exitCodeField: 'exit_code' },
+    { tool: 'mcp__b', commandArg: 'cmd', exitCodeField: 'exit_code' },
+    { tool: 'mcp__a', commandArg: 'script', exitCodeField: 'rc' },
+    { tool: 'mcp__c', commandArg: 'cmd', exitCodeField: 'exit_code' },
   ]);
 });
 
 test('exitCodeField defaults to exit_code and output has exactly three keys', () => {
   const d = proj();
-  write(d, JSON.stringify({ testTools: [{ tool: 'a', commandArg: 'c', extra: 1 }, tool('b', 'c', '')] }));
+  write(d, JSON.stringify({ testTools: [{ tool: 'mcp__a', commandArg: 'c', extra: 1 }, tool('mcp__b', 'c', '')] }));
   const t = loadConfig(d, {}).testTools;
   assert.deepEqual(t, [
-    { tool: 'a', commandArg: 'c', exitCodeField: 'exit_code' },
-    { tool: 'b', commandArg: 'c', exitCodeField: 'exit_code' },
+    { tool: 'mcp__a', commandArg: 'c', exitCodeField: 'exit_code' },
+    { tool: 'mcp__b', commandArg: 'c', exitCodeField: 'exit_code' },
   ]);
 });
 
 test('malformed testTools entries are skipped', () => {
   const d = proj();
   write(d, JSON.stringify({ testTools: [
-    { commandArg: 'c' }, { tool: 'a' }, { tool: '', commandArg: 'c' }, { tool: 'a', commandArg: '' },
-    { tool: 1, commandArg: 'c' }, { tool: 'a', commandArg: 2 }, null, 'x', [], tool('ok', 'c'),
+    { commandArg: 'c' }, { tool: 'mcp__a' }, { tool: '', commandArg: 'c' }, { tool: 'mcp__a', commandArg: '' },
+    { tool: 1, commandArg: 'c' }, { tool: 'mcp__a', commandArg: 2 }, null, 'x', [], tool('mcp__ok', 'c'),
   ] }));
-  assert.deepEqual(loadConfig(d, {}).testTools, [{ tool: 'ok', commandArg: 'c', exitCodeField: 'exit_code' }]);
+  assert.deepEqual(loadConfig(d, {}).testTools, [{ tool: 'mcp__ok', commandArg: 'c', exitCodeField: 'exit_code' }]);
 });
 
 test('bad user files give defaults without throwing', () => {
@@ -171,8 +171,21 @@ test('bad user files give defaults without throwing', () => {
 
 test('when homeDir is the project root the file is read once, not merged with itself', () => {
   const d = proj();
-  write(d, JSON.stringify({ include: ['x'], testTools: [tool('a', 'c')] }));
+  write(d, JSON.stringify({ include: ['x'], testTools: [tool('mcp__a', 'c')] }));
   const c = loadConfig(d, {}, d);
   assert.deepEqual(c.include, ['x']);
   assert.equal(c.testTools.length, 1);
+});
+
+test('only mcp__ tools can be test tools; shell and edit tools are dropped', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ testTools: [tool('Bash', 'command'), tool('mcp__u__run', 'cmd')] }));
+  write(d, JSON.stringify({ testTools: [
+    tool('Bash', 'command'), tool('PowerShell', 'command'), tool('Edit', 'file_path'),
+    tool('MCP__x__run', 'c'), tool('xmcp__y', 'c'), tool('mcp__s__t', 'komut'),
+  ] }));
+  assert.deepEqual(loadConfig(d, {}, home).testTools, [
+    { tool: 'mcp__u__run', commandArg: 'cmd', exitCodeField: 'exit_code' },
+    { tool: 'mcp__s__t', commandArg: 'komut', exitCodeField: 'exit_code' },
+  ]);
 });
