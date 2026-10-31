@@ -47,7 +47,8 @@ const samePath = (a, b) => (process.platform === 'win32'
   ? a.toLowerCase() === b.toLowerCase()
   : a === b);
 
-function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
+// Walks up from cwd to the git root (or only cwd without one) for the nearest project config.
+function findProjectConfig(cwd) {
   const start = path.resolve(cwd);
   let dir = start;
   let root = start;
@@ -66,6 +67,24 @@ function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
     const own = path.join(start, CONFIG_NAME);
     file = fs.existsSync(own) ? own : null;
   }
+  return { file, root };
+}
+
+// Reports whether a config file exists, parses to an object, and how many testTools entries survive normalization.
+function inspectConfigFile(file) {
+  const out = { path: file, exists: false, valid: false, testTools: 0, skipped: 0 };
+  if (!file || !fs.existsSync(file)) return out;
+  out.exists = true;
+  const data = readJson(file);
+  if (!data) return out;
+  out.valid = true;
+  out.testTools = toTestTools(data.testTools).length;
+  out.skipped = (Array.isArray(data.testTools) ? data.testTools.length : 0) - out.testTools;
+  return out;
+}
+
+function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
+  const { file, root } = findProjectConfig(cwd);
   const project = file ? readJson(file) : null;
   // A user file that is the project file is read once, as the project file.
   const userFile = path.join(path.resolve(homeDir), USER_CONFIG_NAME);
@@ -87,4 +106,4 @@ function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
   };
 }
 
-module.exports = { loadConfig, CONFIG_NAME, USER_CONFIG_NAME };
+module.exports = { loadConfig, findProjectConfig, inspectConfigFile, CONFIG_NAME, USER_CONFIG_NAME };

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { ledgerDir, readLedgerFile, currentTurnRecords } = require('../core/ledger.cjs');
-const { loadConfig } = require('../core/config.cjs');
+const { loadConfig, findProjectConfig, inspectConfigFile, USER_CONFIG_NAME } = require('../core/config.cjs');
 const { stopDecision } = require('../adapters/common.cjs');
 
 const PKG_ROOT = path.join(__dirname, '..');
@@ -123,7 +123,7 @@ function allLedgerDirs({ homeDir, env, platform }) {
   ])];
 }
 
-function doctor({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
+function doctor({ homeDir = os.homedir(), env = process.env, platform = process.platform, cwd } = {}) {
   const hooksFile = path.join(homeDir, '.codex', 'hooks.json');
   let codexInstalled = false;
   try {
@@ -146,8 +146,13 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
       lines.push(...fs.readFileSync(path.join(dir, 'errors.log'), 'utf8').split(/\r?\n/).filter((l) => l.trim()));
     } catch { /* no log */ }
   }
+  const projectFile = cwd ? findProjectConfig(cwd).file : null;
   return {
     claude: { installed: claudeInstalled(homeDir) },
+    config: {
+      user: inspectConfigFile(path.join(path.resolve(homeDir), USER_CONFIG_NAME)),
+      project: inspectConfigFile(projectFile),
+    },
     codex: {
       installed: codexInstalled,
       trusted: codexTrusted(path.join(homeDir, '.codex', 'config.toml'), hooksFile),
@@ -231,6 +236,13 @@ function formatStatus(r) {
   ].join('\n');
 }
 
+function configLine(label, c) {
+  const where = c.path || 'none';
+  if (!c.exists) return `${label} config: ${where} (missing)`;
+  if (!c.valid) return `${label} config: ${where} (invalid JSON)`;
+  return `${label} config: ${where} (${c.testTools} test tools${c.skipped ? `, ${c.skipped} skipped` : ''})`;
+}
+
 function formatReport(r) {
   const trust = !r.codex.installed ? 'n/a (Codex hooks not installed)'
     : r.codex.trusted === 'unknown' ? 'unknown (no ~/.codex/config.toml)'
@@ -240,6 +252,8 @@ function formatReport(r) {
     `Claude Code plugin installed: ${r.claude.installed ? 'yes' : 'no'}`,
     `Codex hooks installed:        ${r.codex.installed ? 'yes' : 'no'}`,
     `Codex hooks trusted:          ${trust}`,
+    configLine('User', r.config.user),
+    configLine('Project', r.config.project),
     'Ledger dirs:',
     ...r.ledgerDirs.map((d) => `  ${d}`),
     r.lastErrors.length ? 'Last errors:' : 'Last errors: none',

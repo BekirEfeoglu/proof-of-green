@@ -279,3 +279,69 @@ test('status lists commands and allows after a passing test; caps edits at 10', 
   assert.match(text, /npm test.*test.*pass.*npm/);
   assert.match(text, /Would allow$/m);
 });
+
+// ---- doctor config check ----
+const goodTool = { tool: 'mcp__x__t', commandArg: 'command' };
+function cfgCtx(homeDir, cwd) { return { ...opts(homeDir), cwd }; }
+
+test('doctor config: missing user and project files', (t) => {
+  const homeDir = tempHome(t);
+  const proj = path.join(homeDir, 'proj');
+  fs.mkdirSync(proj);
+  const c = doctor(cfgCtx(homeDir, proj)).config;
+  assert.deepEqual(c.user, { path: path.join(homeDir, '.proof-of-green.json'), exists: false, valid: false, testTools: 0, skipped: 0 });
+  assert.deepEqual(c.project, { path: null, exists: false, valid: false, testTools: 0, skipped: 0 });
+});
+
+test('doctor config: counts kept and skipped testTools in user and project files', (t) => {
+  const homeDir = tempHome(t);
+  const proj = path.join(homeDir, 'proj');
+  fs.mkdirSync(proj);
+  fs.writeFileSync(path.join(homeDir, '.proof-of-green.json'),
+    JSON.stringify({ testTools: [goodTool, { tool: 'Bash', commandArg: 'command' }, 7, { tool: 'mcp__y' }] }));
+  fs.writeFileSync(path.join(proj, '.proof-of-green.json'), JSON.stringify({ testTools: [goodTool] }));
+  const c = doctor(cfgCtx(homeDir, proj)).config;
+  assert.equal(c.user.exists, true);
+  assert.equal(c.user.valid, true);
+  assert.equal(c.user.testTools, 1);
+  assert.equal(c.user.skipped, 3);
+  assert.equal(c.project.path, path.join(proj, '.proof-of-green.json'));
+  assert.equal(c.project.valid, true);
+  assert.equal(c.project.testTools, 1);
+  assert.equal(c.project.skipped, 0);
+});
+
+test('doctor config: invalid JSON and non-object files are valid=false', (t) => {
+  const homeDir = tempHome(t);
+  const proj = path.join(homeDir, 'proj');
+  fs.mkdirSync(proj);
+  fs.writeFileSync(path.join(homeDir, '.proof-of-green.json'), '{nope');
+  fs.writeFileSync(path.join(proj, '.proof-of-green.json'), '[1]');
+  const c = doctor(cfgCtx(homeDir, proj)).config;
+  assert.equal(c.user.exists, true);
+  assert.equal(c.user.valid, false);
+  assert.equal(c.project.exists, true);
+  assert.equal(c.project.valid, false);
+});
+
+test('doctor report prints config lines', (t) => {
+  const homeDir = tempHome(t);
+  const proj = path.join(homeDir, 'proj');
+  fs.mkdirSync(proj);
+  fs.writeFileSync(path.join(homeDir, '.proof-of-green.json'), JSON.stringify({ testTools: [goodTool, 1] }));
+  fs.writeFileSync(path.join(proj, '.proof-of-green.json'), '{bad');
+  const out = [];
+  run(['doctor'], { ...cfgCtx(homeDir, proj), out: (s) => out.push(s), err: () => {} });
+  const text = out.join('\n');
+  assert.ok(text.includes(`User config: ${path.join(homeDir, '.proof-of-green.json')} (1 test tools, 1 skipped)`), text);
+  assert.ok(text.includes(`Project config: ${path.join(proj, '.proof-of-green.json')} (invalid JSON)`), text);
+});
+
+test('doctor report says missing for absent configs', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  run(['doctor'], { ...cfgCtx(homeDir, homeDir), out: (s) => out.push(s), err: () => {} });
+  const text = out.join('\n');
+  assert.match(text, /User config: .*\(missing\)/);
+  assert.match(text, /Project config: none \(missing\)/);
+});
