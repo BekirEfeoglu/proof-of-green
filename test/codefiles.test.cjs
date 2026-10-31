@@ -41,3 +41,18 @@ test('globToRegExp supports **, * and ?', () => {
   assert.equal(globToRegExp('a/*.ts').test('a/x/b.ts'), false);
   assert.equal(globToRegExp('a/?.ts').test('a/x.ts'), true);
 });
+
+test('dot segments and doubled separators do not dodge the home exclusions', () => {
+  assert.equal(isCodeFile('/home/u/./.claude/x.js', { homeDir }), false);
+  assert.equal(isCodeFile('C:\\Users\\x\\\\.claude\\a.js', { homeDir: 'C:\\Users\\x' }), false);
+  assert.equal(isCodeFile('/home/u//.codex/x.js', { homeDir }), false);
+  assert.equal(isCodeFile('/home/u/proj/./src//a.js', { homeDir }), true);
+  assert.equal(isCodeFile('/tmp/./s.py', { homeDir, tmpDir: '/tmp' }), false);
+});
+
+test('the real path of the temp dir is excluded too', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const real = fs.realpathSync.native(os.tmpdir());
+  assert.equal(isCodeFile(real + require('node:path').sep + 'x.js', { homeDir, tmpDir: '/nowhere' }), false);
+});

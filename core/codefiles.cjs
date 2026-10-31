@@ -1,11 +1,15 @@
 'use strict';
+const fs = require('node:fs');
 const os = require('node:os');
+const posix = require('node:path').posix;
 
 const CODE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.py', '.pyi',
   '.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.fs', '.vb', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh',
   '.hpp', '.m', '.mm', '.swift', '.dart', '.rb', '.php', '.ex', '.exs', '.lua', '.sql', '.vue', '.svelte', '.gd', '.ipynb']);
 
 const normalize = (p) => String(p).replace(/\\/g, '/').toLowerCase();
+// Collapses `.` segments and doubled separators so they cannot dodge prefix checks.
+const normalizePath = (p) => posix.normalize(normalize(p));
 const withSlash = (p) => (p.endsWith('/') ? p : p + '/');
 
 function globToRegExp(glob) {
@@ -26,17 +30,26 @@ function globToRegExp(glob) {
 
 const matchesAny = (globs, rel) => (globs || []).some((g) => globToRegExp(g).test(rel));
 
+// The temp dir, plus its real path (a Windows 8.3 short temp path and its long form differ).
+function tmpRoots(tmpDir) {
+  const roots = [tmpDir || os.tmpdir(), os.tmpdir()];
+  try {
+    roots.push(fs.realpathSync.native(os.tmpdir()));
+  } catch { /* the plain temp dir still applies */ }
+  return roots.map((r) => withSlash(normalizePath(r)));
+}
+
 function isCodeFile(filePath, opts = {}) {
-  const p = normalize(filePath);
-  const home = withSlash(normalize(opts.homeDir || os.homedir()));
-  const tmp = withSlash(normalize(opts.tmpDir || os.tmpdir()));
-  const root = opts.root ? withSlash(normalize(opts.root)) : null;
+  const p = normalizePath(filePath);
+  const home = withSlash(normalizePath(opts.homeDir || os.homedir()));
+  const tmps = tmpRoots(opts.tmpDir);
+  const root = opts.root ? withSlash(normalizePath(opts.root)) : null;
   const rel = root && p.startsWith(root) ? p.slice(root.length) : p;
 
   if (matchesAny(opts.exclude, rel)) return false;
   if (/(?:^|\/)(?:node_modules|\.git)\//.test(p)) return false;
   if (p.startsWith(home + '.claude/') || p.startsWith(home + '.codex/')) return false;
-  if (p.startsWith(tmp)) return false;
+  if (tmps.some((tmp) => p.startsWith(tmp))) return false;
   if (matchesAny(opts.include, rel)) return true;
   const base = p.slice(p.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
