@@ -1,8 +1,11 @@
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const CONFIG_NAME = '.proof-of-green.json';
+const USER_CONFIG_NAME = CONFIG_NAME;
+const DEFAULT_EXIT_CODE_FIELD = 'exit_code';
 
 function readJson(file) {
   try {
@@ -21,7 +24,28 @@ function toRegExps(list) {
   return out;
 }
 
-function loadConfig(cwd, env = process.env) {
+const nonEmpty = (v) => typeof v === 'string' && v !== '';
+
+function toTestTools(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const e of list) {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (!nonEmpty(e.tool) || !nonEmpty(e.commandArg)) continue;
+    out.push({
+      tool: e.tool,
+      commandArg: e.commandArg,
+      exitCodeField: nonEmpty(e.exitCodeField) ? e.exitCodeField : DEFAULT_EXIT_CODE_FIELD,
+    });
+  }
+  return out;
+}
+
+const samePath = (a, b) => (process.platform === 'win32'
+  ? a.toLowerCase() === b.toLowerCase()
+  : a === b);
+
+function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
   const start = path.resolve(cwd);
   let dir = start;
   let root = start;
@@ -40,15 +64,25 @@ function loadConfig(cwd, env = process.env) {
     const own = path.join(start, CONFIG_NAME);
     file = fs.existsSync(own) ? own : null;
   }
-  const data = file ? readJson(file) : null;
+  const project = file ? readJson(file) : null;
+  // A user file that is the project file is read once, as the project file.
+  const userFile = path.join(path.resolve(homeDir), USER_CONFIG_NAME);
+  const user = file && samePath(path.resolve(file), userFile) ? null : readJson(userFile);
   const off = String(env.PROOF_OF_GREEN || '').toLowerCase() === 'off';
+  const enabled = project && typeof project.enabled === 'boolean'
+    ? project.enabled
+    : !(user && user.enabled === false);
+  const pTools = toTestTools(project && project.testTools);
+  const pNames = new Set(pTools.map((t) => t.tool));
+  const both = (key) => [...strings(user && user[key]), ...strings(project && project[key])];
   return {
-    enabled: !off && !(data && data.enabled === false),
-    testPatterns: toRegExps(data && data.testCommands),
-    include: strings(data && data.include),
-    exclude: strings(data && data.exclude),
+    enabled: !off && enabled,
+    testPatterns: toRegExps(both('testCommands')),
+    include: both('include'),
+    exclude: both('exclude'),
+    testTools: [...toTestTools(user && user.testTools).filter((t) => !pNames.has(t.tool)), ...pTools],
     root,
   };
 }
 
-module.exports = { loadConfig, CONFIG_NAME };
+module.exports = { loadConfig, CONFIG_NAME, USER_CONFIG_NAME };

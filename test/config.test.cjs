@@ -4,16 +4,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { loadConfig } = require('../core/config.cjs');
+const { loadConfig: loadConfigWithHome } = require('../core/config.cjs');
 
 const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pog-'));
+// Always isolate from the developer's real ~/.proof-of-green.json.
+const loadConfig = (cwd, env, home = mk()) => loadConfigWithHome(cwd, env, home);
 const write = (dir, data) => fs.writeFileSync(path.join(dir, '.proof-of-green.json'), data);
 
 test('no config file gives defaults', () => {
   const d = mk();
   fs.mkdirSync(path.join(d, '.git'));
   const c = loadConfig(d, {});
-  assert.deepEqual({ ...c, root: undefined }, { enabled: true, testPatterns: [], include: [], exclude: [], root: undefined });
+  assert.deepEqual({ ...c, root: undefined }, { enabled: true, testPatterns: [], include: [], exclude: [], testTools: [], root: undefined });
   assert.equal(c.root, d);
 });
 
@@ -71,4 +73,106 @@ test('root falls back to cwd when no .git is found', () => {
   const d = mk();
   const c = loadConfig(d, {});
   assert.equal(c.root, d);
+});
+
+// ---- user-level config and MCP test tools ----
+const proj = () => { const d = mk(); fs.mkdirSync(path.join(d, '.git')); return d; };
+const tool = (tool, commandArg, exitCodeField) => ({ tool, commandArg, ...(exitCodeField ? { exitCodeField } : {}) });
+
+test('user file alone supplies testTools, testCommands, include, exclude', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({
+    testTools: [tool('mcp__x__run', 'command', 'code')],
+    testCommands: ['^make$'], include: ['u/**'], exclude: ['v/**'],
+  }));
+  const c = loadConfig(d, {}, home);
+  assert.deepEqual(c.testTools, [{ tool: 'mcp__x__run', commandArg: 'command', exitCodeField: 'code' }]);
+  assert.equal(c.testPatterns.length, 1);
+  assert.deepEqual(c.include, ['u/**']);
+  assert.deepEqual(c.exclude, ['v/**']);
+});
+
+test('project enabled:false overrides user enabled:true', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ enabled: true }));
+  write(d, JSON.stringify({ enabled: false }));
+  assert.equal(loadConfig(d, {}, home).enabled, false);
+});
+
+test('project enabled:true overrides user enabled:false', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ enabled: false }));
+  write(d, JSON.stringify({ enabled: true }));
+  assert.equal(loadConfig(d, {}, home).enabled, true);
+});
+
+test('user enabled:false disables when project is silent', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ enabled: false }));
+  assert.equal(loadConfig(d, {}, home).enabled, false);
+});
+
+test('PROOF_OF_GREEN=off wins over project enabled:true', () => {
+  const d = proj(); const home = mk();
+  write(d, JSON.stringify({ enabled: true }));
+  assert.equal(loadConfig(d, { PROOF_OF_GREEN: 'off' }, home).enabled, false);
+});
+
+test('lists concatenate user first, then project', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ include: ['u'], exclude: ['ue'], testCommands: ['^a$'] }));
+  write(d, JSON.stringify({ include: ['p'], exclude: ['pe'], testCommands: ['^b$'] }));
+  const c = loadConfig(d, {}, home);
+  assert.deepEqual(c.include, ['u', 'p']);
+  assert.deepEqual(c.exclude, ['ue', 'pe']);
+  assert.deepEqual(c.testPatterns.map((r) => r.source), ['^a$', '^b$']);
+});
+
+test('project testTools entry replaces the user entry with the same tool', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ testTools: [tool('a', 'cmd'), tool('b', 'cmd')] }));
+  write(d, JSON.stringify({ testTools: [tool('a', 'script', 'rc'), tool('c', 'cmd')] }));
+  assert.deepEqual(loadConfig(d, {}, home).testTools, [
+    { tool: 'b', commandArg: 'cmd', exitCodeField: 'exit_code' },
+    { tool: 'a', commandArg: 'script', exitCodeField: 'rc' },
+    { tool: 'c', commandArg: 'cmd', exitCodeField: 'exit_code' },
+  ]);
+});
+
+test('exitCodeField defaults to exit_code and output has exactly three keys', () => {
+  const d = proj();
+  write(d, JSON.stringify({ testTools: [{ tool: 'a', commandArg: 'c', extra: 1 }, tool('b', 'c', '')] }));
+  const t = loadConfig(d, {}).testTools;
+  assert.deepEqual(t, [
+    { tool: 'a', commandArg: 'c', exitCodeField: 'exit_code' },
+    { tool: 'b', commandArg: 'c', exitCodeField: 'exit_code' },
+  ]);
+});
+
+test('malformed testTools entries are skipped', () => {
+  const d = proj();
+  write(d, JSON.stringify({ testTools: [
+    { commandArg: 'c' }, { tool: 'a' }, { tool: '', commandArg: 'c' }, { tool: 'a', commandArg: '' },
+    { tool: 1, commandArg: 'c' }, { tool: 'a', commandArg: 2 }, null, 'x', [], tool('ok', 'c'),
+  ] }));
+  assert.deepEqual(loadConfig(d, {}).testTools, [{ tool: 'ok', commandArg: 'c', exitCodeField: 'exit_code' }]);
+});
+
+test('bad user files give defaults without throwing', () => {
+  for (const raw of ['[]', '"x"', '{nope', JSON.stringify({ testTools: {} })]) {
+    const d = proj(); const home = mk();
+    write(home, raw);
+    const c = loadConfig(d, {}, home);
+    assert.equal(c.enabled, true);
+    assert.deepEqual(c.testTools, []);
+    assert.deepEqual(c.include, []);
+  }
+});
+
+test('when homeDir is the project root the file is read once, not merged with itself', () => {
+  const d = proj();
+  write(d, JSON.stringify({ include: ['x'], testTools: [tool('a', 'c')] }));
+  const c = loadConfig(d, {}, d);
+  assert.deepEqual(c.include, ['x']);
+  assert.equal(c.testTools.length, 1);
 });
