@@ -63,9 +63,11 @@ The ledger is one append-only JSONL file per session, with one JSON line for eac
 
 ## Subagents
 
-Claude Code only. Each subagent is checked when it stops (`SubagentStop`), using only the edits and test runs it made itself in the current turn. A subagent that changed code without a passing test run afterwards is blocked once, the same way the main session is, and the suggested command is the last test command that subagent ran. Tests run by the main session or by another subagent do not count for it.
+Claude Code only. Each subagent is checked when it stops (`SubagentStop`), using only the edits and test runs it made itself, including those from before the main session's latest prompt. A subagent that changed code without a passing test run afterwards is blocked once, the same way the main session is, and the suggested command is the last test command that subagent ran. Tests run by the main session or by another subagent do not count for it.
 
-The main session's stop still looks at every edit in the turn, its subagents' included, so changes a subagent left untested still block the main session.
+The main session's stop still looks at every edit in the turn, including those of subagents that have already stopped, so changes a subagent left untested still block the main session.
+
+A background subagent can still be running when the main session stops. Its changes are checked when it stops; until then the main session's stop leaves them out and carries a note that the subagent is still running.
 
 Codex subagents are not gated separately.
 
@@ -80,6 +82,8 @@ A shell command counts when one of its segments, split on `&&`, `||`, `;`, `|`, 
 - `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test` or `verify`
 - `make test`, `make check`
 - `rspec`, `phpunit`, `mix test`
+
+For `npm`, `pnpm`, `yarn` and `bun`, a script name that starts with `test` followed by `:`, `-` or `_` counts as a test too, for example `npm run test:unit` or `pnpm test-e2e`.
 
 A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. `hatch run test` does not, because `test` there is a script name the gate can't see into. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first.
 
