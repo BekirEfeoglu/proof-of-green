@@ -3,7 +3,7 @@ const os = require('node:os');
 
 const CODE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.py', '.pyi',
   '.go', '.rs', '.java', '.kt', '.kts', '.scala', '.cs', '.fs', '.vb', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh',
-  '.hpp', '.m', '.mm', '.swift', '.dart', '.rb', '.php', '.ex', '.exs', '.lua', '.sql', '.vue', '.svelte', '.gd']);
+  '.hpp', '.m', '.mm', '.swift', '.dart', '.rb', '.php', '.ex', '.exs', '.lua', '.sql', '.vue', '.svelte', '.gd', '.ipynb']);
 
 const normalize = (p) => String(p).replace(/\\/g, '/').toLowerCase();
 const withSlash = (p) => (p.endsWith('/') ? p : p + '/');

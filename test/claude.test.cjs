@@ -154,3 +154,9 @@ test('a background shell run never counts as a test', (t) => {
   s.send('post-tool', { tool_name: 'PowerShell', tool_input: { command: 'npm test', run_in_background: true } });
   assert.deepEqual(s.ledger().records.map((r) => r.isTest), [false, false]);
 });
+
+test('NotebookEdit on a .ipynb records an edit', (t) => {
+  const s = setup(t);
+  s.send('post-tool', { tool_name: 'NotebookEdit', tool_input: { notebook_path: path.join(s.project, 'n.ipynb') } });
+  assert.deepEqual(s.ledger().records.map((r) => [r.kind, r.path]), [['edit', path.join(s.project, 'n.ipynb')]]);
+});
