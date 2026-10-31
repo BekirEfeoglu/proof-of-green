@@ -1,29 +1,12 @@
 'use strict';
 const path = require('node:path');
-const { isTestCommand, suggestTestCommand } = require('../core/detect.cjs');
+const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { readLedger, writeLedger, currentTurnRecords } = require('../core/ledger.cjs');
-const { decide } = require('../core/policy.cjs');
+const { push, stopResponse } = require('./common.cjs');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
-
-function guardedSuggest(root) {
-  try { return suggestTestCommand(root) || null; } catch { return null; }
-}
-
-function latestTestCommand(ledger) {
-  for (let i = ledger.records.length - 1; i >= 0; i--) {
-    const r = ledger.records[i];
-    if (r && r.kind === 'command' && r.isTest === true && typeof r.command === 'string') return r.command;
-  }
-  return null;
-}
-
-function push(ledger, record) {
-  ledger.records.push({ seq: ledger.nextSeq, turn: ledger.turn, ...record });
-  ledger.nextSeq += 1;
-}
 
 function recordTool(ledger, payload, cwd, config, result) {
   const tool = payload.tool_name;
@@ -69,16 +52,8 @@ function handleClaude(event, payload, ctx) {
         writeLedger(dir, p.session_id, ledger);
       }
       return {};
-    case 'stop': {
-      const result = decide(currentTurnRecords(ledger), {
-        enabled: config.enabled,
-        stopHookActive: p.stop_hook_active === true,
-        suggestedCommand: latestTestCommand(ledger) || guardedSuggest(config.root),
-      });
-      if (result.action === 'block') return { decision: 'block', reason: result.reason };
-      if (result.systemMessage) return { systemMessage: result.systemMessage };
-      return {};
-    }
+    case 'stop':
+      return stopResponse(currentTurnRecords(ledger), ledger, config, p);
     default:
       return {};
   }

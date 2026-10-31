@@ -92,3 +92,55 @@ test('PROOF_OF_GREEN=off disables the gate', (t) => {
   s.run('post-tool', edit, { PROOF_OF_GREEN: 'off' });
   assert.equal(s.run('stop', {}, { PROOF_OF_GREEN: 'off' }).out, '{}');
 });
+
+function setupCodex(t) {
+  const base = fs.mkdtempSync(path.join(os.homedir(), '.pog-e2e-codex-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const project = path.join(base, 'proj');
+  fs.mkdirSync(path.join(project, '.git'), { recursive: true });
+  const state = path.join(base, 'state');
+  const run = (event, payload) => {
+    const r = spawnSync(process.execPath, [GATE, 'codex', event], {
+      input: JSON.stringify({ session_id: 'e2e-codex', cwd: project, turn_id: 'turn-1', ...payload }),
+      encoding: 'utf8',
+      env: { ...process.env, LOCALAPPDATA: state, XDG_STATE_HOME: state },
+    });
+    return { status: r.status, out: r.stdout.trim() };
+  };
+  const rollout = (exitCode) => {
+    const file = path.join(base, 'rollout.jsonl');
+    fs.writeFileSync(file, JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'item_completed', turn_id: 'turn-1', item: { type: 'CommandExecution', call_id: 'call-1', command: ['bash', '-lc', 'npm test'], exit_code: exitCode } },
+    }) + '\n');
+    return file;
+  };
+  return { run, rollout };
+}
+
+const codexPatch = { tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: src/a.ts\n*** End Patch' } };
+const codexTest = { tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_use_id: 'call-1' };
+
+test('codex: patch, failing test in rollout, stop blocks', (t) => {
+  const s = setupCodex(t);
+  assert.equal(s.run('post-tool', codexPatch).out, '{}');
+  assert.equal(s.run('post-tool', codexTest).out, '{}');
+  const r = s.run('stop', { transcript_path: s.rollout(1) });
+  assert.equal(r.status, 0);
+  assert.equal(JSON.parse(r.out).decision, 'block');
+});
+
+test('codex: patch, passing test in rollout, stop allows', (t) => {
+  const s = setupCodex(t);
+  s.run('post-tool', codexPatch);
+  s.run('post-tool', codexTest);
+  assert.equal(s.run('stop', { transcript_path: s.rollout(0) }).out, '{}');
+});
+
+test('codex: missing transcript allows with a systemMessage; other events give {}', (t) => {
+  const s = setupCodex(t);
+  s.run('post-tool', codexPatch);
+  s.run('post-tool', codexTest);
+  assert.match(JSON.parse(s.run('stop', { transcript_path: null }).out).systemMessage, /could not be verified/);
+  assert.equal(s.run('user-prompt', {}).out, '{}');
+});
