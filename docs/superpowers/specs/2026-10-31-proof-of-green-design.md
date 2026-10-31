@@ -21,7 +21,7 @@ Success looks like this:
 - Running tests itself.
 - LLM-judged checks.
 - Enforcing test-first order (tdd-guard covers that).
-- A separate gate for Claude Code subagents at `SubagentStop`.
+- A separate gate for Claude Code subagents at `SubagentStop`. Added in 0.3.0 for Claude Code; Codex subagents are still not gated separately.
 - Agents other than Claude Code and Codex CLI.
 
 ## Prior art and positioning
@@ -80,7 +80,7 @@ Codex starts a new turn when `turn_id` changes. Its PostToolUse payload has no e
 
 ### Ledger
 
-- One JSON file per session, named by a SHA-256 of `session_id`.
+- One JSON file per session, named by a SHA-256 of `session_id`. Since 0.3.0 the ledger is an append-only JSONL file instead, one line per record; the description below is the original 0.1 design.
 - Location: `${CLAUDE_PLUGIN_DATA}/ledgers/` for Claude Code; for Codex, `$XDG_STATE_HOME/proof-of-green/` or `~/.local/state/proof-of-green/` on Linux and macOS, `%LOCALAPPDATA%\proof-of-green\` on Windows.
 - Records: `{ seq, turn, kind: "edit" | "command", path | command, isTest, result: "pass" | "fail" | "unknown" }`.
 - Writes go to a temp file and are renamed into place so two concurrent hooks cannot corrupt the file. A lost record from a race is acceptable; a corrupt file is not.

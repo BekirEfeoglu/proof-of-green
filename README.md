@@ -42,7 +42,9 @@ This copies the gate into Codex's state folder and adds two hooks (`PostToolUse`
 npx github:BekirEfeoglu/proof-of-green doctor
 ```
 
-`doctor` reports whether the Claude Code plugin and the Codex hooks are installed, whether Codex has trusted them, where the ledgers live, and the last logged errors. Add `--json` for machine-readable output.
+`doctor` reports whether the Claude Code plugin and the Codex hooks are installed, whether Codex has trusted them, what it finds in your config files, where the ledgers live, and the last logged errors. Add `--json` for machine-readable output.
+
+The config lines look like `User config: <path> (1 test tool, 0 edit tools)`. A file that does not exist is shown as `(missing)` and one that is not a JSON object as `(invalid JSON)`. When some `testTools` or `editTools` entries are malformed and ignored, the line ends with `, N skipped`. The project line shows `none (missing)` when no project config is found.
 
 ## How it decides
 
@@ -56,6 +58,8 @@ At each stop, looking only at the current turn:
 6. Otherwise block. The reason lists up to five edited files, says whether the last test run failed or no test ran, suggests a test command when it can detect one (for example `npm test` when `package.json` has a test script), and tells the agent that if the project has no tests or you asked it not to run them, it should say so plainly and finish.
 
 Any error inside the gate allows the stop and is appended to `errors.log` next to the ledgers. The gate should never trap a session.
+
+The ledger is one append-only JSONL file per session, with one JSON line for each edit, command or new turn. Ledgers older than 7 days are deleted on the next write. A single-file `.json` ledger left by 0.2 is still read.
 
 ## Subagents
 
@@ -112,6 +116,23 @@ Some agents run tests through an MCP tool instead of a shell, for example on a r
 
 The command in that argument goes through the same rules as a shell command: it has to look like a test, and anything after the first test command must be joined with `&&`. The tool's response must be JSON that carries the exit code, either as the response itself or as the text of its first text block. The exit code can be an integer or an integer string (0 is a pass, any other value is a fail). A tool may report a failing command as an error; the gate still reads the exit code from the error text and counts the run as a failed test. If the gate cannot read the exit code, the stop is allowed with a note that the result could not be verified.
 
+## Edits that run through MCP tools
+
+Some agents edit files through an MCP tool instead of Edit or Write, for example the desktop-commander server. The gate cannot see those edits unless you list the tool under `editTools` in a config file:
+
+```json
+{
+  "editTools": [
+    { "tool": "mcp__desktop-commander__write_file", "pathArg": "path" }
+  ]
+}
+```
+
+- `tool`: the full tool name. It must start with `mcp__`; other names are ignored.
+- `pathArg`: the name of the tool argument that holds the file path. A relative path is resolved against the agent's working directory.
+
+The gate only counts a file that passes the same code-file rules as any other edit, including your `include` and `exclude` globs. A call on a non-code file, or without a string path, records nothing. On Claude Code, a call that failed is ignored. A tool listed in both `testTools` and `editTools` is treated as a test tool.
+
 ## Configuration
 
 Everything is optional. There are two files, both named `.proof-of-green.json`: one in your home folder (user level) and one in your project. The gate looks for the project file from the agent's working directory up to the git root. If there is no git root above the working directory, only a `.proof-of-green.json` in the working directory itself is read. If the project file is the home-folder file, it is read once.
@@ -122,7 +143,8 @@ Everything is optional. There are two files, both named `.proof-of-green.json`: 
   "testCommands": ["^make verify$", "^\\./scripts/test\\.sh"],
   "include": ["scripts/**/*.sh"],
   "exclude": ["generated/**"],
-  "testTools": []
+  "testTools": [],
+  "editTools": []
 }
 ```
 
@@ -131,12 +153,21 @@ Everything is optional. There are two files, both named `.proof-of-green.json`: 
 - `include`: globs for extra files that count as code.
 - `exclude`: globs for files that never count. Exclusions win over `include`.
 - `testTools`: MCP tools that run tests, described above.
+- `editTools`: MCP tools that edit files, described below.
 
 Globs are matched against the path relative to the project root. A pattern without a slash, such as `*.gen.ts`, only matches files at the root; use `**/*.gen.ts` for any depth.
 
-When both files exist they are merged. The project's `enabled` wins when it sets one; otherwise the user's `false` still turns the gate off. `testCommands`, `include`, `exclude` and `testTools` are concatenated, user entries first. A `testTools` entry in the project with the same `tool` as a user entry replaces it.
+When both files exist they are merged. The project's `enabled` wins when it sets one; otherwise the user's `false` still turns the gate off. `testCommands`, `include`, `exclude`, `testTools` and `editTools` are concatenated, user entries first. A `testTools` or `editTools` entry in the project with the same `tool` as a user entry replaces it.
 
 Setting `PROOF_OF_GREEN=off` in the environment disables the gate for that process.
+
+## Checking the gate
+
+`proof-of-green status` shows what the gate would do right now, without changing anything. It reads the most recently modified ledger from the ledger folders, so it does not pick the session you mean when several are active. It prints the ledger path, when it was modified, the turn id, the code files edited this turn (the first ten, then a count), the commands the gate recorded this turn with their test or not-a-test classification and result, and a verdict: `Would allow`, `Would allow with note: ...` or `Would block: ...`. Add `--json` for the same data as JSON. With no ledger, it prints `No ledger yet.`, or `{"ledger":null}` with `--json`.
+
+If a recorded command has the result `unknown` and no MCP tool behind it, status adds a note: `Note: Codex results are read from the session log only at Stop, so this verdict may differ.` With `--json` the same text is in a `note` field. Status does not read Codex's session log, so for Codex it can show a different verdict than the real Stop.
+
+To see what the hooks receive, set `PROOF_OF_GREEN_DEBUG=1` in the environment of the agent. Each hook call the gate handles then appends one line to `debug.log`, in the same folder as `errors.log`: a timestamp, the agent, the event, and the payload as JSON cut to 4096 characters. Payloads can contain command output and file paths, so treat the file as sensitive. It is off by default, and the log is trimmed to its last 32 KB once it passes 64 KB.
 
 ## Known limits
 
