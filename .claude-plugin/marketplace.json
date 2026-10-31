@@ -1,5 +1,6 @@
 {
   "name": "proof-of-green",
+  "description": "Blocks Claude Code from ending a turn when code changed and no test passed after the last change.",
   "owner": { "name": "Bekir Efeoğlu" },
   "plugins": [
     { "name": "proof-of-green", "source": "./", "description": "Blocks Claude Code from ending a turn when code changed and no test passed after the last change." }
