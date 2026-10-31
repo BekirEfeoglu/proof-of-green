@@ -3,6 +3,7 @@ const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { readLedger, writeLedger, currentTurnRecords } = require('../core/ledger.cjs');
+const { readToolExitCode } = require('../core/toolresult.cjs');
 const { push, stopResponse } = require('./common.cjs');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -17,6 +18,20 @@ function recordTool(ledger, payload, cwd, config, result) {
     const abs = path.resolve(cwd, p);
     if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) return false;
     push(ledger, { kind: 'edit', path: abs });
+    return true;
+  }
+  const listed = Array.isArray(config.testTools) ? config.testTools.find((t) => t.tool === tool) : undefined;
+  if (listed) {
+    const command = input[listed.commandArg];
+    if (typeof command !== 'string') return false;
+    const failed = result === 'fail';
+    push(ledger, {
+      kind: 'command',
+      command,
+      via: tool,
+      isTest: !failed && isTestCommand(command, config.testPatterns),
+      result: failed ? 'fail' : readToolExitCode(payload.tool_response, listed.exitCodeField),
+    });
     return true;
   }
   if (SHELL_TOOLS.has(tool)) {

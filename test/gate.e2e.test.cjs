@@ -160,3 +160,26 @@ test('edit, background npm test that "passes", stop blocks', (t) => {
   s.run('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } });
   assert.equal(JSON.parse(s.run('stop', {}).out).decision, 'block');
 });
+
+test('listed MCP test tool: edit, failing run blocks naming the tool, passing run allows', (t) => {
+  const s = setup(t);
+  const home = fs.mkdtempSync(path.join(os.homedir(), '.pog-e2e-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const MCP = 'mcp__uzak_sunucu__sunucu_komut_calistir';
+  fs.writeFileSync(path.join(home, '.proof-of-green.json'), JSON.stringify({ testTools: [{ tool: MCP, commandArg: 'komut' }] }));
+  const env = { HOME: home, USERPROFILE: home };
+  const response = (code) => [{ type: 'text', text: JSON.stringify({ exit_code: code, duration_sec: 0.05, stdout: code ? 'FAIL' : 'ok', stderr: '' }) }];
+  const mcp = (code) => ({ tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: response(code) });
+
+  s.run('user-prompt', {}, env);
+  s.run('post-tool', edit, env);
+  s.run('post-tool', mcp(1), env);
+  const blocked = JSON.parse(s.run('stop', {}, env).out);
+  assert.equal(blocked.decision, 'block');
+  assert.ok(blocked.reason.includes(`(through ${MCP})`), blocked.reason);
+
+  s.run('user-prompt', {}, env);
+  s.run('post-tool', edit, env);
+  s.run('post-tool', mcp(0), env);
+  assert.equal(s.run('stop', {}, env).out, '{}');
+});

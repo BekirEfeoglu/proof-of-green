@@ -60,8 +60,8 @@ test('hooks.json declares the four gate events with the right matchers', () => {
   }
   assert.deepEqual(summary, {
     UserPromptSubmit: { matcher: undefined, event: 'user-prompt' },
-    PostToolUse: { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', event: 'post-tool' },
-    PostToolUseFailure: { matcher: 'Bash|PowerShell', event: 'post-tool-failure' },
+    PostToolUse: { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|mcp__.*', event: 'post-tool' },
+    PostToolUseFailure: { matcher: 'Bash|PowerShell|mcp__.*', event: 'post-tool-failure' },
     Stop: { matcher: undefined, event: 'stop' },
   });
 });

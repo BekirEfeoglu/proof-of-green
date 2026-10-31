@@ -183,3 +183,47 @@ test('NotebookEdit on a .ipynb records an edit', (t) => {
   s.send('post-tool', { tool_name: 'NotebookEdit', tool_input: { notebook_path: path.join(s.project, 'n.ipynb') } });
   assert.deepEqual(s.ledger().records.map((r) => [r.kind, r.path]), [['edit', path.join(s.project, 'n.ipynb')]]);
 });
+
+const MCP = 'mcp__uzak_sunucu__sunucu_komut_calistir';
+const mcpConfig = { testTools: [{ tool: MCP, commandArg: 'komut', exitCodeField: 'exit_code' }] };
+const mcpResponse = (code) => [{ type: 'text', text: JSON.stringify({ exit_code: code, duration_sec: 1, stdout: code ? 'FAIL' : 'ok', stderr: '' }) }];
+
+test('listed MCP tool with a failing exit code records a failing test via the tool', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool', { tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: mcpResponse(1) });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.kind, r.command, r.via, r.isTest, r.result], ['command', 'npm test', MCP, true, 'fail']);
+});
+
+test('listed MCP tool with exit code 0 records a passing test', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool', { tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: mcpResponse(0) });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.isTest, r.result], [true, 'pass']);
+});
+
+test('listed MCP tool running a masked command is not a test', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool', { tool_name: MCP, tool_input: { komut: 'npm test || true' }, tool_response: mcpResponse(0) });
+  assert.equal(s.ledger().records[0].isTest, false);
+});
+
+test('post-tool-failure for a listed MCP tool is a non-test failure', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test' } });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.via, r.isTest, r.result], [MCP, false, 'fail']);
+});
+
+test('unlisted MCP tool is never recorded', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool', { tool_name: 'mcp__x__y', tool_input: { komut: 'npm test' }, tool_response: mcpResponse(0) });
+  assert.equal(s.ledger().records.length, 0);
+});
+
+test('listed MCP tool without a string command argument is not recorded', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool', { tool_name: MCP, tool_input: {}, tool_response: mcpResponse(0) });
+  s.send('post-tool', { tool_name: MCP, tool_input: { komut: 42 }, tool_response: mcpResponse(0) });
+  assert.equal(s.ledger().records.length, 0);
+});
