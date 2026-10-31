@@ -458,3 +458,22 @@ test('status leaves out a running subagent and adds the note; a stopped one coun
   assert.deepEqual(r.edits, ['sub.js']);
   assert.equal(r.decision.action, 'block');
 });
+
+test('status says the gate is disabled when the loaded config turns it off', (t) => {
+  const homeDir = tempHome(t);
+  writeStatusLedger(homeDir, 'd.json', { turn: '1', nextSeq: 2, records: [{ seq: 1, turn: '1', kind: 'edit', path: 'x.js' }] });
+  fs.writeFileSync(path.join(homeDir, '.proof-of-green.json'), JSON.stringify({ enabled: false }));
+  const text = [];
+  assert.equal(run(['status'], statusIo(homeDir, text)), 0);
+  assert.deepEqual(text, ['Gate disabled by config']);
+  const json = [];
+  run(['status', '--json'], statusIo(homeDir, json));
+  assert.equal(JSON.parse(json[0]).disabled, true);
+});
+
+test('status says the gate is disabled when PROOF_OF_GREEN=off', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  run(['status'], { ...statusIo(homeDir, out), env: { PROOF_OF_GREEN: 'off' } });
+  assert.deepEqual(out, ['Gate disabled by config']);
+});

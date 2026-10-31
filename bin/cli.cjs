@@ -194,11 +194,12 @@ function newestLedgerFile(dirs) {
 }
 
 function status({ homeDir = os.homedir(), env = process.env, platform = process.platform, cwd = process.cwd() } = {}) {
+  const config = loadConfig(cwd, env, homeDir);
+  if (!config.enabled) return { disabled: true };
   const found = newestLedgerFile(allLedgerDirs({ homeDir, env, platform }));
   if (!found) return null;
   const ledger = readLedgerFile(found.file);
   const { records, note } = parentRecords(ledger);
-  const config = loadConfig(cwd, env, homeDir);
   const names = [];
   for (const r of records) {
     if (r && r.kind === 'edit') {
@@ -215,13 +216,14 @@ function status({ homeDir = os.homedir(), env = process.env, platform = process.
     turn: ledger.turn,
     edits: names,
     commands,
-    decision: withNote(stopDecision(records, ledger, { enabled: true, root: config.root }, false), note),
+    decision: withNote(stopDecision(records, ledger, { enabled: config.enabled, root: config.root }, false), note),
     ...(commands.some((c) => c.result === 'unknown' && !c.via) ? { note: CODEX_NOTE } : {}),
   };
 }
 
 function formatStatus(r) {
   if (!r) return 'No ledger yet.';
+  if (r.disabled) return 'Gate disabled by config';
   const shown = r.edits.slice(0, 10).join(', ');
   const edits = r.edits.length ? (r.edits.length > 10 ? `${shown} (+${r.edits.length - 10} more)` : shown) : 'none';
   const d = r.decision;
