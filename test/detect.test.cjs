@@ -23,11 +23,29 @@ test('a later command cannot mask the test result', () => {
     'npm test && echo ok; ls', 'npm test | tail; set -o pipefail'];
   for (const c of masked) assert.equal(isTestCommand(c), false, c);
 });
-test('only && after the last test, or a PowerShell $? check, keeps it', () => {
-  const kept = ['npm test && echo ok', 'npm test; if ($LASTEXITCODE -ne 0) { exit 1 }', 'npm test 2>&1',
+test('only && after the first test, or a PowerShell $? check, keeps it', () => {
+  const kept = ['npm test && echo ok', 'npm test; if ($LASTEXITCODE -eq 0) { "ok" }', 'npm test 2>&1',
     'npm run lint; npm test', 'set -euo pipefail; npm test | tail', 'npm test\n', 'npm test && pytest'];
   for (const c of kept) assert.equal(isTestCommand(c), true, c);
 });
+test('a later passing command cannot hide an earlier failed test', () => {
+  const hidden = ['npm test; pytest', 'npm test || pytest --version', 'npm test; cargo test --help',
+    'npm test || npm test', 'npm test\npytest'];
+  for (const c of hidden) assert.equal(isTestCommand(c), false, c);
+  const kept = ['npm run lint; npm test', 'cd api && npm test', 'npm test && pytest', 'npm test && echo ok',
+    'npm test 2>&1', 'npm test; if ($?) { "ok" }', 'set -o pipefail; npm test | tail -5'];
+  for (const c of kept) assert.equal(isTestCommand(c), true, c);
+});
+test('a PowerShell if tail that exits or resets LASTEXITCODE masks the test', () => {
+  const masked = ['npm test; if ($LASTEXITCODE -ne 0) { exit 0 }', 'npm test; if ($LASTEXITCODE) { $global:LASTEXITCODE = 0 }',
+    'npm test; if ($?) { exit 0 } else { exit 0 }', 'npm test; if (-not $?) { exit 0 }',
+    'npm test; if ($LASTEXITCODE -ne 0) { exit 1 }'];
+  for (const c of masked) assert.equal(isTestCommand(c), false, c);
+  for (const c of ['npm test; if ($?) { "ok" }', 'npm test; if ($LASTEXITCODE -eq 0) { "ok" }'])
+    assert.equal(isTestCommand(c), true, c);
+});
+test('pipefail follows the last set before the pipe', () =>
+  assert.equal(isTestCommand('set -o pipefail; set +o pipefail; npm test | tail'), false));
 test('recognizes common runner wrappers', () => {
   const runners = ['uv run pytest', 'poetry run pytest -q', 'pipenv run pytest', 'hatch run python -m pytest',
     'pdm run python -m unittest', 'py -m pytest', 'py -3 -m pytest', '.\\gradlew test', '.\\mvnw test',

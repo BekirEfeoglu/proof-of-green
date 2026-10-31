@@ -25,32 +25,36 @@ const stripRunner = (s) => s.replace(/^(?:uv|poetry|pipenv|hatch|pdm)\s+run\s+/,
 
 // Separators: &&, ||, ;, newline, | and a lone & (not part of 2>&1 or &>).
 const SEPARATOR = /(&&|\|\||\r?\n|;|\||(?<![<>&])&(?![>&]))/;
-// PowerShell's `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }` tail checks the result, so it may follow a test.
-const PS_RESULT_CHECK = /;\s*if\s*\(\s*\$(?:\?|LASTEXITCODE\b[^)]*)\)\s*\{[^{}]*\}\s*$/i;
-const PIPEFAIL = /^set\s+-[A-Za-z]*o\s+pipefail\b/;
+// PowerShell's `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }` tail checks the result, so it may follow a test,
+// unless the tail (else block included) runs `exit` or assigns LASTEXITCODE.
+const PS_RESULT_CHECK = /;\s*if\s*\(\s*\$(?:\?|LASTEXITCODE\b[^)]*)\)\s*\{[^{}]*\}(?:\s*else\s*\{[^{}]*\})?\s*$/i;
+const RESETS_EXIT = /\bexit\b|LASTEXITCODE\s*=/i;
+const PIPEFAIL = /^set\s+([-+])[A-Za-z]*o\s+pipefail\b/;
 
 // Alternating [segment, separator, segment, ...] of the quote-stripped command.
 function split(command) {
-  const flat = stripQuotes(command).replace(PS_RESULT_CHECK, '').replace(/[\s;]+$/, '');
+  const flat = stripQuotes(command).replace(PS_RESULT_CHECK, (t) => (RESETS_EXIT.test(t) ? t : '')).replace(/[\s;]+$/, '');
   return flat.split(SEPARATOR).map((s, i) => (i % 2 ? s.replace('\r', '') : stripRunner(stripEnv(s.trim()))));
 }
 
 const segments = (command) => split(command).filter((_, i) => i % 2 === 0);
 const isTestSegment = (seg, patterns) => patterns.some((p) => p.test(seg));
 
-// True when a forced-success form appears, or when the last test segment's exit code
-// is not the command's: anything but && after it (| only under an earlier set -o pipefail).
+// True when a forced-success form appears, or when the first test segment's exit code
+// may not be the command's: anything but && after it (| only while set -o pipefail is on).
 function masked(command, patterns) {
   const flat = stripQuotes(command);
   if (/\|\|\s*(?:true|:|exit\s+0)(?=\s|;|\)|$)/.test(flat)) return true;
   if (/;\s*exit\s+0(?=\s|;|\)|$)/.test(flat)) return true;
   const parts = split(command);
-  let last = -1;
-  for (let i = 0; i < parts.length; i += 2) if (isTestSegment(parts[i], patterns)) last = i;
-  if (last < 0) return false;
-  const pipefail = parts.slice(0, last).some((s, i) => i % 2 === 0 && PIPEFAIL.test(s));
-  for (let i = last + 1; i < parts.length; i += 2) {
-    if (parts[i] === '&&' || (parts[i] === '|' && pipefail)) continue;
+  let pipefail = false;
+  let seenTest = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const set = PIPEFAIL.exec(parts[i]);
+    if (set) pipefail = set[1] === '-';
+    seenTest = seenTest || isTestSegment(parts[i], patterns);
+    const sep = parts[i + 1];
+    if (!seenTest || sep === undefined || sep === '&&' || (sep === '|' && pipefail)) continue;
     return true;
   }
   return false;
