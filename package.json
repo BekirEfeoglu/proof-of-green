@@ -1,6 +1,6 @@
 {
   "name": "proof-of-green",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Stop-hook gate for Claude Code and Codex CLI that blocks completion claims without a passing test run.",
   "license": "MIT",
   "engines": { "node": ">=18" },

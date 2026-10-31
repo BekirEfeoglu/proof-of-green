@@ -188,7 +188,13 @@ claude plugin uninstall proof-of-green@proof-of-green
 claude plugin marketplace remove proof-of-green
 ```
 
-Codex: remove the two proof-of-green entries from `~/.codex/hooks.json`, then delete the copied gate in `proof-of-green/app` inside Codex's state folder (`%LOCALAPPDATA%` on Windows, `$XDG_STATE_HOME` or `~/.local/state` elsewhere). `doctor` shows the folder.
+Codex:
+
+```
+npx github:BekirEfeoglu/proof-of-green uninstall codex
+```
+
+This removes the two proof-of-green entries from `~/.codex/hooks.json` and deletes the copied gate. Your other hooks stay. The ledgers and logs stay in `proof-of-green` inside Codex's state folder (`%LOCALAPPDATA%` on Windows, `$XDG_STATE_HOME` or `~/.local/state` elsewhere); delete that folder too if you want them gone. `doctor` shows where it is.
 
 ## Known limits
 
@@ -219,6 +225,10 @@ The suite uses Node's built-in test runner and needs no install. CI runs it on U
 | claude-hook-gate | Runs commands from `gate.yaml` at Stop | Re-runs tests; needs config and a downloaded binary |
 | claude-verify-before-stop | Trusts a "VERIFIED" line the agent writes | The agent can fake it; no exit codes |
 | codhc | Re-runs one command at Codex Stop | Re-runs tests; no edit tracking |
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
