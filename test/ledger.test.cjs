@@ -207,3 +207,25 @@ test('temp files older than an hour are pruned on write, newer are kept', (t) =>
   assert.equal(fs.existsSync(old), false);
   assert.equal(fs.existsSync(fresh), true);
 });
+
+test('errors.log over 64 KB is cut to its last 32 KB at a line boundary before appending', (t) => {
+  const d = mk(t);
+  const file = path.join(d, 'errors.log');
+  const lines = Array.from({ length: 1000 }, (_, i) => `line-${String(i).padStart(4, '0')} ${'x'.repeat(80)}`);
+  fs.writeFileSync(file, lines.join('\n') + '\n');
+  assert.ok(fs.statSync(file).size > 64 * 1024);
+  logError(d, 'fresh');
+  const out = fs.readFileSync(file, 'utf8');
+  assert.ok(Buffer.byteLength(out) <= 32 * 1024 + 200, `size ${Buffer.byteLength(out)}`);
+  const kept = out.split('\n').filter(Boolean);
+  assert.match(kept[kept.length - 1], / fresh$/);
+  assert.equal(kept[0], lines[lines.length - (kept.length - 1)]);
+  assert.match(kept[kept.length - 2], /^line-0999 /);
+});
+
+test('errors.log under the limit is left alone', (t) => {
+  const d = mk(t);
+  logError(d, 'a');
+  logError(d, 'b');
+  assert.equal(fs.readFileSync(path.join(d, 'errors.log'), 'utf8').split('\n').filter(Boolean).length, 2);
+});

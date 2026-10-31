@@ -73,11 +73,26 @@ function writeLedger(dir, sessionId, ledger) {
 
 const currentTurnRecords = (ledger) => ledger.records.filter((r) => r.turn === ledger.turn);
 
+const ERROR_LOG_MAX = 64 * 1024;
+const ERROR_LOG_KEEP = 32 * 1024;
+
+// Past 64 KB, keep only the last 32 KB, starting at a line boundary.
+function trimErrorLog(file) {
+  try {
+    if (fs.statSync(file).size <= ERROR_LOG_MAX) return;
+    const tail = fs.readFileSync(file).subarray(-ERROR_LOG_KEEP);
+    const nl = tail.indexOf(10);
+    fs.writeFileSync(file, nl === -1 ? Buffer.alloc(0) : tail.subarray(nl + 1));
+  } catch { /* a missing or unreadable log is simply appended to */ }
+}
+
 function logError(dir, err) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     const text = err && err.stack ? err.stack : String(err);
-    fs.appendFileSync(path.join(dir, 'errors.log'), `${new Date().toISOString()} ${text}\n`);
+    const file = path.join(dir, 'errors.log');
+    trimErrorLog(file);
+    fs.appendFileSync(file,`${new Date().toISOString()} ${text}\n`);
   } catch { /* logging must never throw */ }
 }
 
