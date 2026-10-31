@@ -1,0 +1,10 @@
+{
+  "name": "proof-of-green",
+  "version": "0.1.0",
+  "description": "Stop-hook gate for Claude Code and Codex CLI that blocks completion claims without a passing test run.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "bin": { "proof-of-green": "bin/cli.cjs" },
+  "scripts": { "test": "node --test" },
+  "files": ["gate.cjs", "core/", "adapters/", "bin/", "hooks/", ".claude-plugin/"]
+}
