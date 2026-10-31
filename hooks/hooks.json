@@ -1,16 +1,16 @@
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/gate.cjs", "claude", "user-prompt"], "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude user-prompt", "timeout": 10 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell", "hooks": [ { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/gate.cjs", "claude", "post-tool"], "timeout": 10 } ] }
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude post-tool", "timeout": 10 } ] }
     ],
     "PostToolUseFailure": [
-      { "matcher": "Bash|PowerShell", "hooks": [ { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/gate.cjs", "claude", "post-tool-failure"], "timeout": 10 } ] }
+      { "matcher": "Bash|PowerShell", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude post-tool-failure", "timeout": 10 } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/gate.cjs", "claude", "stop"], "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude stop", "timeout": 10 } ] }
     ]
   }
 }

@@ -14,10 +14,15 @@ const plugin = readJson('.claude-plugin/plugin.json');
 const marketplace = readJson('.claude-plugin/marketplace.json');
 const hooks = readJson('hooks/hooks.json');
 
+// String-form command: node "<script>" claude <event>
+const COMMAND = /^node "([^"]+)" (\S+) (\S+)$/;
 const handlers = [];
 for (const [name, groups] of Object.entries(hooks.hooks)) {
   for (const group of groups) {
-    for (const handler of group.hooks) handlers.push({ name, group, handler });
+    for (const handler of group.hooks) {
+      const m = COMMAND.exec(handler.command) || [];
+      handlers.push({ name, group, handler, script: m[1], agent: m[2], event: m[3] });
+    }
   }
 }
 
@@ -50,8 +55,8 @@ test('plugin version and license match package.json', () => {
 
 test('hooks.json declares the four gate events with the right matchers', () => {
   const summary = {};
-  for (const { name, group, handler } of handlers) {
-    summary[name] = { matcher: group.matcher, event: handler.args[2] };
+  for (const { name, group, event } of handlers) {
+    summary[name] = { matcher: group.matcher, event };
   }
   assert.deepEqual(summary, {
     UserPromptSubmit: { matcher: undefined, event: 'user-prompt' },
@@ -61,26 +66,27 @@ test('hooks.json declares the four gate events with the right matchers', () => {
   });
 });
 
-test('every handler is an exec-form node command with a timeout', () => {
+test('every handler is a string-form node command with a timeout', () => {
   assert.equal(handlers.length, 4);
-  for (const { handler } of handlers) {
+  for (const { handler, agent } of handlers) {
     assert.equal(handler.type, 'command');
-    assert.equal(handler.command, 'node');
+    assert.match(handler.command, COMMAND);
+    assert.equal(handler.args, undefined);
     assert.equal(handler.timeout, 10);
-    assert.equal(handler.args[1], 'claude');
+    assert.equal(agent, 'claude');
   }
 });
 
 test('every handler script exists after substituting CLAUDE_PLUGIN_ROOT', () => {
   for (const { handler } of handlers) {
-    const script = handler.args[0].replace('${CLAUDE_PLUGIN_ROOT}', ROOT);
+    const script = COMMAND.exec(handler.command)[1].replace('${CLAUDE_PLUGIN_ROOT}', ROOT);
     assert.ok(fs.existsSync(script), `missing ${script}`);
   }
 });
 
 test('every handler event is accepted by the gate', () => {
   assert.equal(gateAccepts('definitely-not-an-event'), false, 'probe must detect unknown events');
-  for (const { handler } of handlers) {
-    assert.ok(gateAccepts(handler.args[2]), `gate rejects ${handler.args[2]}`);
+  for (const { event } of handlers) {
+    assert.ok(gateAccepts(event), `gate rejects ${event}`);
   }
 });
