@@ -41,6 +41,16 @@ function recordTool(out, payload, cwd, config, result) {
     });
     return true;
   }
+  // Listed after testTools, so a tool in both lists is a test tool.
+  const editTool = result === 'pass' && Array.isArray(config.editTools) ? config.editTools.find((t) => t.tool === tool) : undefined;
+  if (editTool) {
+    const p = input[editTool.pathArg];
+    if (typeof p !== 'string' || !p) return false;
+    const abs = path.resolve(cwd, p);
+    if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) return false;
+    out.push({ kind: 'edit', path: abs, via: tool });
+    return true;
+  }
   if (SHELL_TOOLS.has(tool)) {
     if (typeof input.command !== 'string') return false;
     out.push({

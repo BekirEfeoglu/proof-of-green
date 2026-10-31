@@ -236,11 +236,13 @@ function formatStatus(r) {
   ].join('\n');
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 function configLine(label, c) {
   const where = c.path || 'none';
   if (!c.exists) return `${label} config: ${where} (missing)`;
   if (!c.valid) return `${label} config: ${where} (invalid JSON)`;
-  return `${label} config: ${where} (${c.testTools} test tools${c.skipped ? `, ${c.skipped} skipped` : ''})`;
+  return `${label} config: ${where} (${plural(c.testTools, 'test tool')}, ${plural(c.editTools, 'edit tool')}${c.skipped ? `, ${c.skipped} skipped` : ''})`;
 }
 
 function formatReport(r) {

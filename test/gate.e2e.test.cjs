@@ -253,3 +253,38 @@ test('PROOF_OF_GREEN_DEBUG truncates the payload to 4096 chars and is off by def
   const line = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean)[0];
   assert.ok(line.length < 4096 + 100, String(line.length));
 });
+
+test('listed MCP edit tool: edit then stop blocks, a passing test allows; failed edit call does not', (t) => {
+  const s = setup(t);
+  const home = fs.mkdtempSync(path.join(os.homedir(), '.pog-e2e-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const EDIT_MCP = 'mcp__dc__write_file';
+  fs.writeFileSync(path.join(home, '.proof-of-green.json'), JSON.stringify({ editTools: [{ tool: EDIT_MCP, pathArg: 'path' }] }));
+  const env = { HOME: home, USERPROFILE: home };
+  const mcpEdit = { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' } };
+
+  s.run('user-prompt', {}, env);
+  s.run('post-tool-failure', mcpEdit, env);
+  assert.equal(s.run('stop', {}, env).out, '{}');
+
+  s.run('user-prompt', {}, env);
+  s.run('post-tool', mcpEdit, env);
+  const blocked = JSON.parse(s.run('stop', {}, env).out);
+  assert.equal(blocked.decision, 'block');
+  assert.match(blocked.reason, /a\.ts/);
+
+  s.run('post-tool', npmTest, env);
+  assert.equal(s.run('stop', {}, env).out, '{}');
+});
+
+test('doctor prints singular and plural tool counts from a temp home config', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pog-e2e-doctor-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const e = (n) => ({ tool: `mcp__e${n}`, pathArg: 'path' });
+  fs.writeFileSync(path.join(home, '.proof-of-green.json'), JSON.stringify({ testTools: [{ tool: 'mcp__t', commandArg: 'c' }], editTools: [e(1), e(2)] }));
+  const cli = path.join(__dirname, '..', 'bin', 'cli.cjs');
+  const r = spawnSync(process.execPath, [cli, 'doctor'], {
+    cwd: home, encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_DATA: path.join(home, 'data') },
+  });
+  assert.ok(r.stdout.includes('(1 test tool, 2 edit tools)'), r.stdout + r.stderr);
+});

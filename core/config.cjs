@@ -43,6 +43,17 @@ function toTestTools(list) {
   return out;
 }
 
+function toEditTools(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const e of list) {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (!nonEmpty(e.tool) || !nonEmpty(e.pathArg) || !e.tool.startsWith('mcp__')) continue;
+    out.push({ tool: e.tool, pathArg: e.pathArg });
+  }
+  return out;
+}
+
 const samePath = (a, b) => (process.platform === 'win32'
   ? a.toLowerCase() === b.toLowerCase()
   : a === b);
@@ -72,14 +83,16 @@ function findProjectConfig(cwd) {
 
 // Reports whether a config file exists, parses to an object, and how many testTools entries survive normalization.
 function inspectConfigFile(file) {
-  const out = { path: file, exists: false, valid: false, testTools: 0, skipped: 0 };
+  const out = { path: file, exists: false, valid: false, testTools: 0, editTools: 0, skipped: 0 };
   if (!file || !fs.existsSync(file)) return out;
   out.exists = true;
   const data = readJson(file);
   if (!data) return out;
   out.valid = true;
   out.testTools = toTestTools(data.testTools).length;
-  out.skipped = (Array.isArray(data.testTools) ? data.testTools.length : 0) - out.testTools;
+  out.editTools = toEditTools(data.editTools).length;
+  const listed = (v) => (Array.isArray(v) ? v.length : 0);
+  out.skipped = listed(data.testTools) - out.testTools + listed(data.editTools) - out.editTools;
   return out;
 }
 
@@ -95,6 +108,8 @@ function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
     : !(user && user.enabled === false);
   const pTools = toTestTools(project && project.testTools);
   const pNames = new Set(pTools.map((t) => t.tool));
+  const pEdits = toEditTools(project && project.editTools);
+  const pEditNames = new Set(pEdits.map((t) => t.tool));
   const both = (key) => [...strings(user && user[key]), ...strings(project && project[key])];
   return {
     enabled: !off && enabled,
@@ -102,6 +117,7 @@ function loadConfig(cwd, env = process.env, homeDir = os.homedir()) {
     include: both('include'),
     exclude: both('exclude'),
     testTools: [...toTestTools(user && user.testTools).filter((t) => !pNames.has(t.tool)), ...pTools],
+    editTools: [...toEditTools(user && user.editTools).filter((t) => !pEditNames.has(t.tool)), ...pEdits],
     root,
   };
 }

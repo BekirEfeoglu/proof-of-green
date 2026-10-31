@@ -260,3 +260,38 @@ test('listed MCP tool without a string command argument is not recorded', (t) =>
   s.send('post-tool', { tool_name: MCP, tool_input: { komut: 42 }, tool_response: mcpResponse(0) });
   assert.equal(s.ledger().records.length, 0);
 });
+
+// ---- editTools: MCP edit tools ----
+const EDIT_MCP = 'mcp__dc__write_file';
+const editCfg = { editTools: [{ tool: EDIT_MCP, pathArg: 'path' }] };
+
+test('listed MCP edit tool on a code file records an edit that makes stop block', (t) => {
+  const s = setup(t, editCfg);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' } });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.kind, r.path, r.via], ['edit', path.join(s.project, 'src', 'a.ts'), EDIT_MCP]);
+  assert.equal(s.send('stop', {}).decision, 'block');
+});
+
+test('listed MCP edit tool: non-code path, missing or non-string pathArg record nothing', (t) => {
+  const s = setup(t, editCfg);
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 'README.md' } });
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: {} });
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 42 } });
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: '' } });
+  s.send('post-tool', { tool_name: 'mcp__other__write', tool_input: { path: 'src/a.ts' } });
+  assert.deepEqual(s.ledger().records, []);
+});
+
+test('post-tool-failure for a listed MCP edit tool records nothing', (t) => {
+  const s = setup(t, editCfg);
+  s.send('post-tool-failure', { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' } });
+  assert.deepEqual(s.ledger().records, []);
+});
+
+test('a tool listed in both testTools and editTools is treated as a test tool', (t) => {
+  const s = setup(t, { testTools: [{ tool: EDIT_MCP, commandArg: 'path', exitCodeField: 'exit_code' }], ...editCfg });
+  s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' }, tool_response: mcpResponse(0) });
+  assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command']);
+});

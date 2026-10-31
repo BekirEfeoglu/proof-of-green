@@ -79,6 +79,16 @@ function recordTool(out, payload, cwd, config) {
     });
     return true;
   }
+  // Listed after testTools, so a tool in both lists is a test tool.
+  const editTool = Array.isArray(config.editTools) ? config.editTools.find((t) => t.tool === payload.tool_name) : undefined;
+  if (editTool) {
+    const p = input[editTool.pathArg];
+    if (typeof p !== 'string' || !p) return false;
+    const abs = path.resolve(cwd, p);
+    if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) return false;
+    out.push({ kind: 'edit', path: abs, via: payload.tool_name });
+    return true;
+  }
   if (payload.tool_name === 'Bash') {
     const command = commandText(input.command);
     if (!command) return false;

@@ -15,7 +15,7 @@ test('no config file gives defaults', () => {
   const d = mk();
   fs.mkdirSync(path.join(d, '.git'));
   const c = loadConfig(d, {});
-  assert.deepEqual({ ...c, root: undefined }, { enabled: true, testPatterns: [], include: [], exclude: [], testTools: [], root: undefined });
+  assert.deepEqual({ ...c, root: undefined }, { enabled: true, testPatterns: [], include: [], exclude: [], testTools: [], editTools: [], root: undefined });
   assert.equal(c.root, d);
 });
 
@@ -188,4 +188,41 @@ test('only mcp__ tools can be test tools; shell and edit tools are dropped', () 
     { tool: 'mcp__u__run', commandArg: 'cmd', exitCodeField: 'exit_code' },
     { tool: 'mcp__s__t', commandArg: 'komut', exitCodeField: 'exit_code' },
   ]);
+});
+
+// ---- editTools: MCP tools whose edits count as code edits ----
+const editTool = (tool, pathArg) => ({ tool, pathArg });
+
+test('editTools default to an empty list', () => {
+  assert.deepEqual(loadConfig(proj(), {}).editTools, []);
+});
+
+test('editTools are normalized to exactly tool and pathArg', () => {
+  const d = proj();
+  write(d, JSON.stringify({ editTools: [{ tool: 'mcp__dc__write_file', pathArg: 'path', extra: 1 }] }));
+  assert.deepEqual(loadConfig(d, {}).editTools, [{ tool: 'mcp__dc__write_file', pathArg: 'path' }]);
+});
+
+test('malformed editTools entries are skipped; only mcp__ tools qualify', () => {
+  const d = proj();
+  write(d, JSON.stringify({ editTools: [
+    editTool('Edit', 'file_path'), editTool('mcp__a', ''), editTool('', 'p'), { tool: 'mcp__b' },
+    { pathArg: 'p' }, null, 7, [], editTool('mcp__c', 5), editTool('mcp__ok', 'p'),
+  ] }));
+  assert.deepEqual(loadConfig(d, {}).editTools, [{ tool: 'mcp__ok', pathArg: 'p' }]);
+});
+
+test('editTools merge: user then project, project entry replaces the same tool', () => {
+  const d = proj(); const home = mk();
+  write(home, JSON.stringify({ editTools: [editTool('mcp__a', 'x'), editTool('mcp__b', 'x')] }));
+  write(d, JSON.stringify({ editTools: [editTool('mcp__a', 'y'), editTool('mcp__c', 'x')] }));
+  assert.deepEqual(loadConfig(d, {}, home).editTools, [
+    { tool: 'mcp__b', pathArg: 'x' }, { tool: 'mcp__a', pathArg: 'y' }, { tool: 'mcp__c', pathArg: 'x' },
+  ]);
+});
+
+test('a non-array editTools value yields no edit tools', () => {
+  const d = proj();
+  write(d, JSON.stringify({ editTools: {} }));
+  assert.deepEqual(loadConfig(d, {}).editTools, []);
 });
