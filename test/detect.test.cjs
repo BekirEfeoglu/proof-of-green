@@ -63,6 +63,12 @@ test('recognizes common runner wrappers', () => {
   for (const c of ['uv run python app.py', 'npm install', 'pnpm build', 'hatch run test', 'npm tag'])
     assert.equal(isTestCommand(c), false, c);
 });
+test("recognizes Node's built-in test runner", () => {
+  for (const c of ['node --test', 'node --test test/', 'node --test test/cli.test.cjs', 'node --test --test-reporter=spec'])
+    assert.equal(isTestCommand(c), true, c);
+  for (const c of ['node test.js', 'node app.js --test', 'node --test-reporter=spec app.js', 'node --test 2>&1 | Select-String ok'])
+    assert.equal(isTestCommand(c), false, c);
+});
 test('pipefail keeps a piped test', () => assert.equal(isTestCommand('set -o pipefail; npm test | tail -5'), true));
 test('extra patterns', () => assert.equal(isTestCommand('make verify', [/^make verify$/]), true));
 test('env assignment prefix is stripped', () => assert.equal(isTestCommand('CI=1 npm test'), true));

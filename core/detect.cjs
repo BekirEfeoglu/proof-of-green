@@ -12,6 +12,7 @@ const BUILTIN_TEST_PATTERNS = [
   /^cargo\s+(?:test|nextest)\b/,
   /^dotnet\s+test\b/,
   /^deno\s+test\b/,
+  /^node\s+--test(?:\s|$)/,
   /^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))\s+(?:test|verify)\b/,
   /^make\s+(?:test|check)\b/,
   /^(?:rspec|phpunit)\b/,
