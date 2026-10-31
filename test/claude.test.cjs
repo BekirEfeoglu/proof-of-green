@@ -407,11 +407,76 @@ test('subagent-stop suggests the latest test command from its own records', (t) 
   assert.doesNotMatch(out.reason, /npx jest/);
 });
 
-test('parent stop still blocks on an untested subagent edit', (t) => {
+test('parent stop still blocks on an untested edit of a stopped subagent', (t) => {
   const s = setup(t);
   s.send('user-prompt', {});
   s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  assert.equal(s.send('subagent-stop', asAgent(AGENT, {})).decision, 'block');
   const out = s.send('stop', {});
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /a\.ts/);
+  assert.doesNotMatch(out.reason, /still running/);
+});
+
+const runningNote = (id) => `proof-of-green: subagent ${id} is still running; its changes will be checked when it stops.`;
+
+test('subagent-stop records an agent-stop line whether it blocks or allows', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('subagent-stop', asAgent(AGENT, {}));
+  s.send('subagent-stop', asAgent(OTHER, {}));
+  const l = s.ledger();
+  assert.deepEqual([...l.stoppedAgents].sort(), [AGENT, OTHER].sort());
+  assert.equal(l.records.length, 1);
+});
+
+test('parent stop allows with a note while a background subagent with edits is still running', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  assert.deepEqual(s.send('stop', {}), { systemMessage: runningNote(AGENT) });
+});
+
+test('parent stop blocks on that subagent edit once the subagent has stopped', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('stop', {});
+  s.send('subagent-stop', asAgent(AGENT, { stop_hook_active: true }));
+  const out = s.send('stop', {});
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /a\.ts/);
+});
+
+test('parent stop counts a foreground subagent that stopped before it', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, {})), {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/p.ts' } });
+  s.send('post-tool', asAgent(OTHER, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  s.send('subagent-stop', asAgent(OTHER, {}));
+  assert.deepEqual(s.send('stop', {}), {});
+});
+
+test('a running subagent test does not satisfy the parent; the block reason carries the note', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/p.ts' } });
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  const out = s.send('stop', {});
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /p\.ts/);
+  assert.doesNotMatch(out.reason, /a\.ts/);
+  assert.ok(out.reason.endsWith(' ' + runningNote(AGENT)));
+});
+
+test('a running subagent without edits gives no note', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'ls' } }));
+  assert.deepEqual(s.send('stop', {}), {});
 });

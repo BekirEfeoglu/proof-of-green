@@ -36,8 +36,9 @@ function readJsonLedger(file) {
 
 // Replays <base>.jsonl on top of the legacy <base>.json. Each record gets its seq from its
 // position and the turn in effect when it was appended; unparsable or torn lines are skipped.
+// agent-stop lines only mark a subagent as stopped (stoppedAgents); they are not records.
 function readBase(base) {
-  const ledger = readJsonLedger(base + '.json');
+  const ledger = { ...readJsonLedger(base + '.json'), stoppedAgents: new Set() };
   let text;
   try { text = fs.readFileSync(base + '.jsonl', 'utf8'); } catch { return ledger; }
   for (const line of text.split('\n')) {
@@ -46,6 +47,8 @@ function readBase(base) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     if (entry.kind === 'turn') {
       if (typeof entry.turn === 'string') ledger.turn = entry.turn;
+    } else if (entry.kind === 'agent-stop') {
+      if (typeof entry.agent === 'string' && entry.agent) ledger.stoppedAgents.add(entry.agent);
     } else if (entry.kind === 'edit' || entry.kind === 'command') {
       ledger.records.push({ ...entry, seq: ledger.nextSeq, turn: ledger.turn });
       ledger.nextSeq += 1;

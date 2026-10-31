@@ -2,9 +2,9 @@
 const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
-const { readLedger, appendRecord, startTurn, currentTurnRecords } = require('../core/ledger.cjs');
+const { readLedger, appendRecord, startTurn } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
-const { stopResponse } = require('./common.cjs');
+const { stopResponse, parentRecords } = require('./common.cjs');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
@@ -90,13 +90,17 @@ function handleClaude(event, payload, ctx) {
     }
     case 'stop': {
       const ledger = readLedger(dir, p.session_id);
-      return stopResponse(currentTurnRecords(ledger), ledger, config, p);
+      const { records, note } = parentRecords(ledger);
+      return stopResponse(records, ledger, config, p, note);
     }
     case 'subagent-stop': {
       // Judge the subagent on all of its own records, whatever the parent's turn: a background
       // subagent can outlive the turn that started it. decide() compares its last edit with later tests.
       const agent = agentIdOf(p);
-      if (p.stop_hook_active === true || !agent) return {};
+      if (!agent) return {};
+      // Marks the subagent as stopped for the parent's Stop, whatever this decision is.
+      appendRecord(dir, p.session_id, { kind: 'agent-stop', agent });
+      if (p.stop_hook_active === true) return {};
       const ledger = readLedger(dir, p.session_id);
       const own = { ...ledger, records: ledger.records.filter((r) => r.agent === agent) };
       return stopResponse(own.records, own, config, p);

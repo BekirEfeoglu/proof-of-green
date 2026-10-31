@@ -3,9 +3,9 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { ledgerDir, readLedgerFile, currentTurnRecords } = require('../core/ledger.cjs');
+const { ledgerDir, readLedgerFile } = require('../core/ledger.cjs');
 const { loadConfig, findProjectConfig, inspectConfigFile, USER_CONFIG_NAME } = require('../core/config.cjs');
-const { stopDecision } = require('../adapters/common.cjs');
+const { stopDecision, parentRecords, withNote } = require('../adapters/common.cjs');
 
 const PKG_ROOT = path.join(__dirname, '..');
 const TRUST_NOTE =
@@ -197,7 +197,7 @@ function status({ homeDir = os.homedir(), env = process.env, platform = process.
   const found = newestLedgerFile(allLedgerDirs({ homeDir, env, platform }));
   if (!found) return null;
   const ledger = readLedgerFile(found.file);
-  const records = currentTurnRecords(ledger);
+  const { records, note } = parentRecords(ledger);
   const config = loadConfig(cwd, env, homeDir);
   const names = [];
   for (const r of records) {
@@ -215,7 +215,7 @@ function status({ homeDir = os.homedir(), env = process.env, platform = process.
     turn: ledger.turn,
     edits: names,
     commands,
-    decision: stopDecision(records, ledger, { enabled: true, root: config.root }, false),
+    decision: withNote(stopDecision(records, ledger, { enabled: true, root: config.root }, false), note),
     ...(commands.some((c) => c.result === 'unknown' && !c.via) ? { note: CODEX_NOTE } : {}),
   };
 }

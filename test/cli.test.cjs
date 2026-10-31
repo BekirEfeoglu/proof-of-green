@@ -438,3 +438,23 @@ test('status has no Codex note when results are known or unknown with via', (t) 
   run(['status', '--json'], statusIo(homeDir, json));
   assert.equal('note' in JSON.parse(json[0]), false);
 });
+
+test('status leaves out a running subagent and adds the note; a stopped one counts', (t) => {
+  const homeDir = tempHome(t);
+  const legacy = writeStatusLedger(homeDir, 'r.json', { turn: '1', nextSeq: 1, records: [] });
+  const write = (lines) => fs.writeFileSync(legacy + 'l', lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const lines = [{ kind: 'edit', path: 'src/sub.js', agent: 'A1' }];
+  write(lines);
+  let out = [];
+  run(['status', '--json'], statusIo(homeDir, out));
+  let r = JSON.parse(out[0]);
+  assert.deepEqual(r.edits, []);
+  assert.equal(r.decision.action, 'allow');
+  assert.equal(r.decision.systemMessage, 'proof-of-green: subagent A1 is still running; its changes will be checked when it stops.');
+  write([...lines, { kind: 'agent-stop', agent: 'A1' }]);
+  out = [];
+  run(['status', '--json'], statusIo(homeDir, out));
+  r = JSON.parse(out[0]);
+  assert.deepEqual(r.edits, ['sub.js']);
+  assert.equal(r.decision.action, 'block');
+});

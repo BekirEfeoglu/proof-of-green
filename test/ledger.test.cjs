@@ -12,7 +12,7 @@ const mk = (t) => {
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));
   return d;
 };
-const EMPTY = { turn: '0', nextSeq: 1, records: [] };
+const EMPTY = { turn: '0', nextSeq: 1, records: [], stoppedAgents: new Set() };
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 3600 * 1000);
 
@@ -32,6 +32,7 @@ test('appended records and turn markers read back with seq and turn', (t) => {
       { seq: 2, turn: '3', kind: 'edit', path: 'b.js' },
       { seq: 3, turn: '3', kind: 'command', command: 'npm test', isTest: true, result: 'pass', id: 'x' },
     ],
+    stoppedAgents: new Set(),
   });
 });
 
@@ -39,7 +40,7 @@ test('turn markers alone set the turn', (t) => {
   const d = mk(t);
   startTurn(d, 's1', '1');
   startTurn(d, 's1', 'turn-b');
-  assert.deepEqual(readLedger(d, 's1'), { turn: 'turn-b', nextSeq: 1, records: [] });
+  assert.deepEqual(readLedger(d, 's1'), { turn: 'turn-b', nextSeq: 1, records: [], stoppedAgents: new Set() });
 });
 
 test('seq or turn fields stored in a line never override the replayed ones', (t) => {
@@ -55,7 +56,7 @@ test('a truncated last line and unparsable or unknown lines are skipped', (t) =>
   fs.appendFileSync(jsonl(d, 's1'),
     'garbage\n42\nnull\n[]\n{"kind":"turn"}\n{"kind":"other"}\n{"kind":"turn","turn":"5"}\n{"kind":"edit","pa');
   assert.deepEqual(readLedger(d, 's1'), {
-    turn: '5', nextSeq: 2, records: [{ seq: 1, turn: '0', kind: 'edit', path: 'a.js' }],
+    turn: '5', nextSeq: 2, records: [{ seq: 1, turn: '0', kind: 'edit', path: 'a.js' }], stoppedAgents: new Set(),
   });
 });
 
@@ -69,7 +70,7 @@ test('an append after a torn line is still read', (t) => {
 test('CRLF line endings are tolerated', (t) => {
   const d = mk(t);
   fs.writeFileSync(jsonl(d, 's1'), '{"kind":"turn","turn":"1"}\r\n{"kind":"edit","path":"a"}\r\n');
-  assert.deepEqual(readLedger(d, 's1'), { turn: '1', nextSeq: 2, records: [{ seq: 1, turn: '1', kind: 'edit', path: 'a' }] });
+  assert.deepEqual(readLedger(d, 's1'), { turn: '1', nextSeq: 2, records: [{ seq: 1, turn: '1', kind: 'edit', path: 'a' }], stoppedAgents: new Set() });
 });
 
 test('a legacy .json ledger is read first and .jsonl lines are applied on top', (t) => {
@@ -90,6 +91,7 @@ test('a legacy .json ledger is read first and .jsonl lines are applied on top', 
       { seq: 3, turn: '2', kind: 'command', command: 'npm test', isTest: true, result: 'pass' },
       { seq: 4, turn: '3', kind: 'edit', path: 'new.js' },
     ],
+    stoppedAgents: new Set(),
   });
 });
 
@@ -147,7 +149,7 @@ test('missing or wrong-typed fields fall back to defaults', (t) => {
   fs.writeFileSync(path.join(d, sha('s1') + '.json'), JSON.stringify({ turn: 5, nextSeq: 'x', records: 'no' }));
   assert.deepEqual(readLedger(d, 's1'), EMPTY);
   fs.writeFileSync(path.join(d, sha('s1') + '.json'), JSON.stringify({ turn: '2' }));
-  assert.deepEqual(readLedger(d, 's1'), { turn: '2', nextSeq: 1, records: [] });
+  assert.deepEqual(readLedger(d, 's1'), { turn: '2', nextSeq: 1, records: [], stoppedAgents: new Set() });
 });
 
 test('file name is the SHA-256 hex of the session id plus .jsonl', (t) => {
@@ -323,4 +325,17 @@ test('debug.log is never pruned and is trimmed like errors.log', (t) => {
   fs.writeFileSync(log, ('y'.repeat(99) + '\n').repeat(700));
   debugLog(d, 'claude', 'stop', {});
   assert.ok(fs.statSync(log).size < 40 * 1024);
+});
+
+test('agent-stop lines take no seq and are not records; they fill stoppedAgents', (t) => {
+  const d = mk(t);
+  appendRecord(d, 's1', { kind: 'edit', path: 'a.js', agent: 'A' });
+  appendRecord(d, 's1', { kind: 'agent-stop', agent: 'A' });
+  appendRecord(d, 's1', { kind: 'agent-stop' });
+  appendRecord(d, 's1', { kind: 'agent-stop', agent: 7 });
+  appendRecord(d, 's1', { kind: 'edit', path: 'b.js' });
+  const l = readLedger(d, 's1');
+  assert.deepEqual(l.records.map((r) => [r.seq, r.path]), [[1, 'a.js'], [2, 'b.js']]);
+  assert.equal(l.nextSeq, 3);
+  assert.deepEqual([...l.stoppedAgents], ['A']);
 });
