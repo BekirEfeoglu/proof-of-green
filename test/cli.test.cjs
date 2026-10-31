@@ -204,3 +204,18 @@ test('run install codex prints Updated for a v0.1 install', (t) => {
   assert.match(out.join('\n'), /^Updated: PostToolUse$/m);
   assert.doesNotMatch(out.join('\n'), /already installed/);
 });
+
+test('a hand-edited PostToolUse matcher is left alone and not reported as updated', (t) => {
+  const homeDir = tempHome(t);
+  installCodex(opts(homeDir));
+  const file = path.join(homeDir, '.codex', 'hooks.json');
+  const edited = readHooks(homeDir);
+  edited.hooks.PostToolUse[0].matcher = '.*';
+  fs.writeFileSync(file, JSON.stringify(edited, null, 2) + '\n');
+  const before = fs.readFileSync(file, 'utf8');
+
+  const r = installCodex(opts(homeDir));
+  assert.deepEqual([r.added, r.updated], [[], []]);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(readHooks(homeDir).hooks.PostToolUse[0].matcher, '.*');
+});

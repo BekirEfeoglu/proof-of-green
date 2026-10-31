@@ -54,19 +54,19 @@ function installCodex({ homeDir = os.homedir(), env = process.env, platform = pr
 
   const base = `node "${toSlash(appDir)}/gate.cjs" codex`;
   const wanted = [
-    { event: 'PostToolUse', matcher: 'apply_patch|Bash|mcp__.*', command: `${base} post-tool` },
+    { event: 'PostToolUse', matcher: 'apply_patch|Bash|mcp__.*', v01Matcher: 'apply_patch|Bash', command: `${base} post-tool` },
     { event: 'Stop', command: `${base} stop` },
   ];
   const added = [];
   const updated = [];
-  for (const { event, matcher, command } of wanted) {
+  for (const { event, matcher, v01Matcher, command } of wanted) {
     const groups = Array.isArray(data.hooks[event]) ? data.hooks[event] : [];
     const ours = groups.filter(
       (g) => g && Array.isArray(g.hooks) && g.hooks.some((h) => h && h.command === command),
     );
     if (ours.length) {
-      // An older install (v0.1 matcher `apply_patch|Bash`) gets the new matcher in place.
-      const stale = matcher ? ours.filter((g) => g.matcher !== matcher) : [];
+      // Only the exact v0.1 matcher is upgraded in place; a hand-edited matcher is left alone.
+      const stale = v01Matcher ? ours.filter((g) => g.matcher === v01Matcher) : [];
       for (const g of stale) g.matcher = matcher;
       if (stale.length) updated.push(event);
       continue;
