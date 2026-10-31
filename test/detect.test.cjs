@@ -17,7 +17,18 @@ const no = ['echo "tests passed"', 'npm test || true', 'pytest || :', 'go test .
 
 test('detects test commands', () => { for (const c of yes) assert.equal(isTestCommand(c), true, c); });
 test('rejects masked or fake commands', () => { for (const c of no) assert.equal(isTestCommand(c), false, c); });
-test('pipefail keeps a piped test', () => assert.equal(isTestCommand('set -o pipefail; npm test | tail -5'), true));
+test('a later command cannot mask the test result', () => {
+  const masked = ['npm test; echo "exit: $?"', 'npm test || echo failed', 'npm test\necho done', 'npm test; ls',
+    'pytest -q; true', 'npm test &', 'set +o pipefail; npm test | tail', 'npm test | tee out.txt; echo set pipefail',
+    'npm test && echo ok; ls', 'npm test | tail; set -o pipefail'];
+  for (const c of masked) assert.equal(isTestCommand(c), false, c);
+});
+test('only && after the last test, or a PowerShell $? check, keeps it', () => {
+  const kept = ['npm test && echo ok', 'npm test; if ($LASTEXITCODE -ne 0) { exit 1 }', 'npm test 2>&1',
+    'npm run lint; npm test', 'set -euo pipefail; npm test | tail', 'npm test\n', 'npm test && pytest'];
+  for (const c of kept) assert.equal(isTestCommand(c), true, c);
+});
+test('pipefail keeps a piped test',() => assert.equal(isTestCommand('set -o pipefail; npm test | tail -5'), true));
 test('extra patterns', () => assert.equal(isTestCommand('make verify', [/^make verify$/]), true));
 test('env assignment prefix is stripped', () => assert.equal(isTestCommand('CI=1 npm test'), true));
 test('isMasked flags masking forms', () => {
