@@ -173,3 +173,58 @@ test('disabled config, missing session_id and unknown events return {} and write
   assert.deepEqual(handleCodex('user-prompt', { session_id: 's1', cwd: s.project }, on), {});
   assert.equal(fs.existsSync(s.dir), false);
 });
+
+test('without turn ids, an earlier turn\'s pass never satisfies the current turn', (t) => {
+  const s = setup(t);
+  s.send('post-tool', { ...bash('npm test', 'c1'), turn_id: 'turn-1' });
+  s.send('post-tool', { ...patchTool(), turn_id: 'turn-2' });
+  s.send('post-tool', { ...bash('npm test'), turn_id: 'turn-2' });
+  const file = s.rollout([
+    { command: ['bash', '-lc', 'npm test'], exit_code: 0, turnId: null },
+    { command: ['bash', '-lc', 'npm test'], exit_code: 1, turnId: null },
+  ]);
+  assert.equal(s.send('stop', { turn_id: 'turn-2', transcript_path: file }).decision, 'block');
+});
+
+test('text matching never takes a result whose call id belongs to another ledger record', (t) => {
+  const s = setup(t);
+  s.send('post-tool', { ...bash('npm test', 'c1'), turn_id: 'turn-1' });
+  s.send('post-tool', { ...patchTool(), turn_id: 'turn-2' });
+  s.send('post-tool', { ...bash('npm test'), turn_id: 'turn-2' });
+  const file = s.rollout([{ call_id: 'c1', command: 'npm test', exit_code: 0, turnId: null }]);
+  const out = s.send('stop', { turn_id: 'turn-2', transcript_path: file });
+  assert.equal(out.decision, undefined);
+  assert.match(out.systemMessage, /could not be verified/);
+});
+
+test('a record with an unmatched id does not take another call\'s result by text', (t) => {
+  const s = setup(t);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', bash('npm test', 'x9'));
+  const file = s.rollout([{ call_id: 'c7', command: 'npm test', exit_code: 0 }]);
+  const out = s.send('stop', { transcript_path: file });
+  assert.equal(out.decision, undefined);
+  assert.match(out.systemMessage, /could not be verified/);
+});
+
+test('without turn ids, fail then pass in the current turn resolves in order and allows', (t) => {
+  const s = setup(t);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', bash('npm test'));
+  s.send('post-tool', bash('npm test'));
+  const file = s.rollout([
+    { command: 'npm test', exit_code: 1, turnId: null },
+    { command: 'npm test', exit_code: 0, turnId: null },
+  ]);
+  assert.deepEqual(s.send('stop', { transcript_path: file }), {});
+});
+
+test('a patch with move and delete headers records every code path and stop blocks', (t) => {
+  const s = setup(t);
+  s.send('post-tool', patchTool('*** Begin Patch\n*** Update File: src/x.py\n*** Move to: src/y.py\n*** Delete File: lib/old.go\n*** End Patch'));
+  assert.deepEqual(s.ledger().records.map((r) => path.relative(s.project, r.path)),
+    [path.join('src', 'x.py'), path.join('src', 'y.py'), path.join('lib', 'old.go')]);
+  const out = s.send('stop', { transcript_path: null });
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /old\.go/);
+});

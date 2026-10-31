@@ -51,8 +51,9 @@ function textMatches(record, result) {
   return want === normalize(result.command) || (typeof result.lastArg === 'string' && want === normalize(result.lastArg));
 }
 
-// Returns copies of the records with unknown command results filled in from the rollout.
-function resolveResults(records, results) {
+// Returns copies of the current turn's records with unknown command results filled in
+// from the rollout. allRecords (every turn) guards against taking another call's result.
+function resolveResults(records, results, allRecords, turn) {
   const out = records.map((r) => ({ ...r }));
   const pending = out.filter((r) => r.kind === 'command' && r.result === 'unknown' && typeof r.command === 'string');
   const used = new Set();
@@ -62,10 +63,25 @@ function resolveResults(records, results) {
     const i = results.findIndex((x, j) => !used.has(j) && x.callId === r.id);
     if (i >= 0) { used.add(i); matched.set(r, results[i]); }
   }
-  for (const r of pending) {
-    if (matched.has(r)) continue;
-    const i = results.findIndex((x, j) =>
-      !used.has(j) && (x.turnId === undefined || x.turnId === r.turn) && textMatches(r, x));
+
+  // Text pass. A result with a call id is never taken by an id'd record (its own id did not
+  // match) nor when that id belongs to any ledger record. When the rollout carries turn ids,
+  // only the current turn's results are eligible; otherwise match from the end of the file so
+  // results from earlier turns are never preferred.
+  const ledgerIds = new Set(allRecords.map((r) => r && r.id).filter((id) => typeof id === 'string' && id));
+  const hasTurnIds = results.some((x) => x.turnId !== undefined);
+  const eligible = (r, x, j) => {
+    if (used.has(j) || !textMatches(r, x)) return false;
+    const hasCallId = typeof x.callId === 'string' && x.callId !== '';
+    if (hasCallId && (typeof r.id === 'string' || ledgerIds.has(x.callId))) return false;
+    return !hasTurnIds || x.turnId === turn;
+  };
+  const textPending = pending.filter((r) => !matched.has(r));
+  const order = hasTurnIds ? textPending : [...textPending].reverse();
+  for (const r of order) {
+    let i = -1;
+    if (hasTurnIds) i = results.findIndex((x, j) => eligible(r, x, j));
+    else for (let j = results.length - 1; j >= 0 && i < 0; j--) if (eligible(r, results[j], j)) i = j;
     if (i >= 0) { used.add(i); matched.set(r, results[i]); }
   }
   for (const [r, x] of matched) {
@@ -90,7 +106,7 @@ function handleCodex(event, payload, ctx) {
     if (recordTool(ledger, p, cwd, config) || newTurn) writeLedger(dir, p.session_id, ledger);
     return {};
   }
-  const records = resolveResults(currentTurnRecords(ledger), readCommandResults(p.transcript_path));
+  const records = resolveResults(currentTurnRecords(ledger), readCommandResults(p.transcript_path), ledger.records, ledger.turn);
   return stopResponse(records, ledger, config, p);
 }
 

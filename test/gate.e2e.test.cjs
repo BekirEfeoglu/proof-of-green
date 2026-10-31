@@ -99,11 +99,11 @@ function setupCodex(t) {
   const project = path.join(base, 'proj');
   fs.mkdirSync(path.join(project, '.git'), { recursive: true });
   const state = path.join(base, 'state');
-  const run = (event, payload) => {
+  const run = (event, payload, extraEnv = {}) => {
     const r = spawnSync(process.execPath, [GATE, 'codex', event], {
       input: JSON.stringify({ session_id: 'e2e-codex', cwd: project, turn_id: 'turn-1', ...payload }),
       encoding: 'utf8',
-      env: { ...process.env, LOCALAPPDATA: state, XDG_STATE_HOME: state },
+      env: { ...process.env, LOCALAPPDATA: state, XDG_STATE_HOME: state, ...extraEnv },
     });
     return { status: r.status, out: r.stdout.trim() };
   };
@@ -115,7 +115,7 @@ function setupCodex(t) {
     }) + '\n');
     return file;
   };
-  return { run, rollout };
+  return { run, rollout, state };
 }
 
 const codexPatch = { tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: src/a.ts\n*** End Patch' } };
@@ -143,4 +143,12 @@ test('codex: missing transcript allows with a systemMessage; other events give {
   s.run('post-tool', codexTest);
   assert.match(JSON.parse(s.run('stop', { transcript_path: null }).out).systemMessage, /could not be verified/);
   assert.equal(s.run('user-prompt', {}).out, '{}');
+});
+
+test('codex: throwing adapter fails open and logs to the codex ledger dir', (t) => {
+  const s = setupCodex(t);
+  const r = s.run('stop', {}, { PROOF_OF_GREEN_TEST_THROW: '1' });
+  assert.deepEqual([r.status, r.out], [0, '{}']);
+  const log = fs.readFileSync(path.join(s.state, 'proof-of-green', 'errors.log'), 'utf8');
+  assert.match(log, /PROOF_OF_GREEN_TEST_THROW/);
 });
