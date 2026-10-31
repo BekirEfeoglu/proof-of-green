@@ -168,3 +168,42 @@ test('errors.log is never pruned', (t) => {
   writeLedger(d, 's', EMPTY);
   assert.equal(fs.existsSync(log), true);
 });
+
+test('writeLedger retries a rename that fails with EPERM once', (t) => {
+  const d = mk(t);
+  const real = fs.renameSync;
+  let calls = 0;
+  fs.renameSync = (...args) => {
+    calls++;
+    if (calls === 1) throw Object.assign(new Error('locked'), { code: 'EPERM' });
+    return real(...args);
+  };
+  t.after(() => { fs.renameSync = real; });
+  writeLedger(d, 's1', EMPTY);
+  assert.equal(calls, 2);
+  assert.deepEqual(readLedger(d, 's1'), EMPTY);
+});
+
+test('writeLedger rethrows when the rename keeps failing and leaves no temp file', (t) => {
+  const d = mk(t);
+  const real = fs.renameSync;
+  let calls = 0;
+  fs.renameSync = () => { calls++; throw Object.assign(new Error('busy'), { code: 'EBUSY' }); };
+  t.after(() => { fs.renameSync = real; });
+  assert.throws(() => writeLedger(d, 's1', EMPTY), { code: 'EBUSY' });
+  assert.equal(calls, 3);
+  assert.deepEqual(fs.readdirSync(d).filter((f) => f.endsWith('.tmp')), []);
+});
+
+test('temp files older than an hour are pruned on write, newer are kept', (t) => {
+  const d = mk(t);
+  const old = path.join(d, 'stale.json.123.abcd.tmp');
+  const fresh = path.join(d, 'fresh.json.456.ef01.tmp');
+  fs.writeFileSync(old, '{');
+  fs.writeFileSync(fresh, '{');
+  const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000);
+  fs.utimesSync(old, twoHoursAgo, twoHoursAgo);
+  writeLedger(d, 's1', EMPTY);
+  assert.equal(fs.existsSync(old), false);
+  assert.equal(fs.existsSync(fresh), true);
+});

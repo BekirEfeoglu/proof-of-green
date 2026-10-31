@@ -5,6 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const TMP_MAX_AGE_MS = 3600 * 1000;
+const RENAME_ATTEMPTS = 3;
 const APP = 'proof-of-green';
 
 function ledgerDir(agent, env, platform = process.platform, homeDir = os.homedir()) {
@@ -34,15 +36,25 @@ function readLedger(dir, sessionId) {
 
 function prune(dir) {
   try {
-    const cutoff = Date.now() - MAX_AGE_MS;
+    const now = Date.now();
     for (const name of fs.readdirSync(dir)) {
-      if (!name.endsWith('.json')) continue;
+      const maxAge = name.endsWith('.json') ? MAX_AGE_MS : name.endsWith('.tmp') ? TMP_MAX_AGE_MS : null;
+      if (maxAge === null) continue;
       const file = path.join(dir, name);
       try {
-        if (fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file);
+        if (fs.statSync(file).mtimeMs < now - maxAge) fs.unlinkSync(file);
       } catch { /* ignore: file vanished or locked */ }
     }
   } catch { /* ignore: pruning is best effort */ }
+}
+
+// Windows can briefly lock the target (antivirus, a concurrent reader): retry before giving up.
+function renameWithRetry(from, to) {
+  for (let attempt = 1; ; attempt++) {
+    try { return fs.renameSync(from, to); } catch (err) {
+      if (attempt >= RENAME_ATTEMPTS || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err;
+    }
+  }
 }
 
 function writeLedger(dir, sessionId, ledger) {
@@ -51,7 +63,7 @@ function writeLedger(dir, sessionId, ledger) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(ledger));
-    fs.renameSync(tmp, file);
+    renameWithRetry(tmp, file);
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* nothing to clean */ }
     throw err;
