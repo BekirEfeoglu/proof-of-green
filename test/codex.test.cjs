@@ -296,3 +296,13 @@ test('an unknown MCP result never takes a shell result from the rollout by text'
   assert.equal(out.decision, undefined);
   assert.match(out.systemMessage, /could not be verified/);
 });
+
+test('a listed MCP call with a JSON string tool_input records its command', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', { tool_name: MCP, tool_input: '{"komut":"npm test"}', tool_response: mcpText(0) });
+  s.send('post-tool', { tool_name: MCP, tool_input: 'not json', tool_response: mcpText(0) });
+  s.send('post-tool', { tool_name: MCP, tool_input: '["npm test"]', tool_response: mcpText(0) });
+  assert.deepEqual(s.ledger().records.map(({ kind, command, via, isTest, result }) => ({ kind, command, via, isTest, result })), [
+    { kind: 'command', command: 'npm test', via: MCP, isTest: true, result: 'pass' },
+  ]);
+});

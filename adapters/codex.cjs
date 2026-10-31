@@ -43,8 +43,19 @@ function innerScript(c) {
   return rest;
 }
 
+// MCP calls may carry their arguments as a JSON string; anything but a plain object is {}.
+function parseInput(raw) {
+  if (typeof raw !== 'string') return raw && typeof raw === 'object' ? raw : {};
+  try {
+    const v = JSON.parse(raw);
+    return v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
 function recordTool(ledger, payload, cwd, config) {
-  const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
+  const input = parseInput(payload.tool_input);
   if (payload.tool_name === 'apply_patch') {
     let added = false;
     for (const p of parsePatchPaths(input.command)) {
