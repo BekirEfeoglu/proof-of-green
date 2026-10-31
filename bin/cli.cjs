@@ -11,7 +11,7 @@ const PKG_ROOT = path.join(__dirname, '..');
 const TRUST_NOTE =
   'Codex skips new hooks until you trust them: run /hooks in Codex and trust the proof-of-green hooks.';
 const CODEX_NOTE = 'Note: Codex results are read from the session log only at Stop, so this verdict may differ.';
-const USAGE = 'Usage: proof-of-green install codex | doctor [--json] | status [--json]';
+const USAGE = 'Usage: proof-of-green install codex | uninstall codex | doctor [--json] | status [--json]';
 
 const toSlash = (p) => p.replace(/\\/g, '/');
 const norm = (p) => toSlash(p).toLowerCase();
@@ -37,29 +37,36 @@ function readHooksFile(hooksFile) {
   }
   let data;
   try { data = JSON.parse(text); } catch (err) {
-    throw new Error(`${hooksFile} is not valid JSON (${err.message}); fix or remove it, then run install again.`);
+    throw new Error(`${hooksFile} is not valid JSON (${err.message}); fix or remove it, then run the command again.`);
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error(`${hooksFile} must contain a JSON object; fix or remove it, then run install again.`);
+    throw new Error(`${hooksFile} must contain a JSON object; fix or remove it, then run the command again.`);
   }
   if (data.hooks === undefined) data.hooks = {};
   if (!data.hooks || typeof data.hooks !== 'object' || Array.isArray(data.hooks)) {
-    throw new Error(`${hooksFile} has a "hooks" value that is not an object; fix it, then run install again.`);
+    throw new Error(`${hooksFile} has a "hooks" value that is not an object; fix it, then run the command again.`);
   }
   return data;
 }
 
-function installCodex({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
+function codexPaths({ homeDir, env, platform }) {
   const appDir = path.join(ledgerDir('codex', env, platform, homeDir), 'app');
-  const hooksFile = path.join(homeDir, '.codex', 'hooks.json');
+  const base = `node "${toSlash(appDir)}/gate.cjs" codex`;
+  return {
+    appDir,
+    hooksFile: path.join(homeDir, '.codex', 'hooks.json'),
+    wanted: [
+      { event: 'PostToolUse', matcher: 'apply_patch|Bash|mcp__.*', v01Matcher: 'apply_patch|Bash', command: `${base} post-tool` },
+      { event: 'Stop', command: `${base} stop` },
+    ],
+  };
+}
+
+function installCodex({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
+  const { appDir, hooksFile, wanted } = codexPaths({ homeDir, env, platform });
   const data = readHooksFile(hooksFile); // throws before anything is written
   copyApp(appDir);
 
-  const base = `node "${toSlash(appDir)}/gate.cjs" codex`;
-  const wanted = [
-    { event: 'PostToolUse', matcher: 'apply_patch|Bash|mcp__.*', v01Matcher: 'apply_patch|Bash', command: `${base} post-tool` },
-    { event: 'Stop', command: `${base} stop` },
-  ];
   const added = [];
   const updated = [];
   for (const { event, matcher, v01Matcher, command } of wanted) {
@@ -84,6 +91,36 @@ function installCodex({ homeDir = os.homedir(), env = process.env, platform = pr
     fs.writeFileSync(hooksFile, JSON.stringify(data, null, 2) + '\n');
   }
   return { appDir, hooksFile, added, updated };
+}
+
+// Removes only the two hook entries install wrote and the copied app; ledgers, logs and
+// Codex's config.toml (trust state) are left alone.
+function uninstallCodex({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
+  const { appDir, hooksFile, wanted } = codexPaths({ homeDir, env, platform });
+  const data = readHooksFile(hooksFile); // throws before anything is removed
+  const removed = [];
+  for (const { event, command } of wanted) {
+    const groups = Array.isArray(data.hooks[event]) ? data.hooks[event] : [];
+    let found = false;
+    const kept = [];
+    for (const g of groups) {
+      if (!g || !Array.isArray(g.hooks) || !g.hooks.some((h) => h && h.command === command)) {
+        kept.push(g);
+        continue;
+      }
+      found = true;
+      const rest = g.hooks.filter((h) => !h || h.command !== command);
+      if (rest.length) kept.push({ ...g, hooks: rest });
+    }
+    if (!found) continue;
+    if (kept.length) data.hooks[event] = kept;
+    else delete data.hooks[event];
+    removed.push(event);
+  }
+  if (removed.length) fs.writeFileSync(hooksFile, JSON.stringify(data, null, 2) + '\n');
+  const appRemoved = fs.existsSync(appDir);
+  if (appRemoved) fs.rmSync(appDir, { recursive: true, force: true });
+  return { appDir, hooksFile, removed, appRemoved };
 }
 
 function codexTrusted(configFile, hooksFile) {
@@ -281,6 +318,13 @@ function run(argv, io) {
       io.out(TRUST_NOTE);
       return 0;
     }
+    if (cmd === 'uninstall' && arg === 'codex') {
+      const r = uninstallCodex(ctx);
+      io.out(`Hooks file: ${r.hooksFile}`);
+      io.out(r.removed.length ? `Removed hooks: ${r.removed.join(', ')}` : 'Codex hooks were not installed.');
+      if (r.appRemoved) io.out(`Removed app: ${r.appDir}`);
+      return 0;
+    }
     if (cmd === 'doctor') {
       const r = doctor(ctx);
       io.out(argv.includes('--json') ? JSON.stringify(r, null, 2) : formatReport(r));
@@ -300,7 +344,7 @@ function run(argv, io) {
   return 1;
 }
 
-module.exports = { installCodex, doctor, status, run };
+module.exports = { installCodex, uninstallCodex, doctor, status, run };
 
 if (require.main === module) {
   process.exitCode = run(process.argv.slice(2), {

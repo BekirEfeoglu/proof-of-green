@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { installCodex, doctor, status, run } = require('../bin/cli.cjs');
+const { installCodex, uninstallCodex, doctor, status, run } = require('../bin/cli.cjs');
 
 function tempHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pog-cli-'));
@@ -67,6 +67,80 @@ test('invalid hooks.json is not overwritten', (t) => {
   fs.writeFileSync(file, '{ not json');
   assert.throws(() => installCodex(opts(homeDir)), /hooks\.json/);
   assert.equal(fs.readFileSync(file, 'utf8'), '{ not json');
+});
+
+test('uninstall removes our hooks and the app, keeps other hooks, ledgers and config.toml', (t) => {
+  const homeDir = tempHome(t);
+  fs.mkdirSync(path.join(homeDir, '.codex'));
+  const hooksFile = path.join(homeDir, '.codex', 'hooks.json');
+  fs.writeFileSync(hooksFile, JSON.stringify({
+    other: 1,
+    hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo mine', timeout: 5 }] }] },
+  }));
+  const { appDir } = installCodex(opts(homeDir));
+  const ledger = path.join(path.dirname(appDir), 'abc.jsonl');
+  fs.writeFileSync(ledger, '{}\n');
+  const config = path.join(homeDir, '.codex', 'config.toml');
+  fs.writeFileSync(config, 'model = "x"\n');
+
+  const r = uninstallCodex(opts(homeDir));
+  assert.deepEqual(r.removed, ['PostToolUse', 'Stop']);
+  assert.equal(r.appRemoved, true);
+  assert.equal(fs.existsSync(appDir), false);
+  assert.ok(fs.existsSync(ledger));
+  assert.equal(fs.readFileSync(config, 'utf8'), 'model = "x"\n');
+  const hooks = readHooks(homeDir);
+  assert.equal(hooks.other, 1);
+  assert.deepEqual(commands(hooks, 'Stop'), ['echo mine']);
+  assert.equal(hooks.hooks.PostToolUse, undefined);
+});
+
+test('uninstall keeps an unrelated hook that shares a group with ours', (t) => {
+  const homeDir = tempHome(t);
+  installCodex(opts(homeDir));
+  const data = readHooks(homeDir);
+  data.hooks.Stop[0].hooks.push({ type: 'command', command: 'echo mine' });
+  fs.writeFileSync(path.join(homeDir, '.codex', 'hooks.json'), JSON.stringify(data));
+  uninstallCodex(opts(homeDir));
+  assert.deepEqual(commands(readHooks(homeDir), 'Stop'), ['echo mine']);
+});
+
+test('uninstall twice, or with nothing installed, changes nothing', (t) => {
+  const homeDir = tempHome(t);
+  const none = uninstallCodex(opts(homeDir));
+  assert.deepEqual(none.removed, []);
+  assert.equal(none.appRemoved, false);
+  assert.equal(fs.existsSync(path.join(homeDir, '.codex')), false);
+  installCodex(opts(homeDir));
+  uninstallCodex(opts(homeDir));
+  const after = fs.readFileSync(path.join(homeDir, '.codex', 'hooks.json'), 'utf8');
+  const again = uninstallCodex(opts(homeDir));
+  assert.deepEqual(again.removed, []);
+  assert.equal(again.appRemoved, false);
+  assert.equal(fs.readFileSync(path.join(homeDir, '.codex', 'hooks.json'), 'utf8'), after);
+});
+
+test('uninstall leaves an invalid hooks.json and the app alone', (t) => {
+  const homeDir = tempHome(t);
+  const { appDir, hooksFile } = installCodex(opts(homeDir));
+  fs.writeFileSync(hooksFile, '{ not json');
+  assert.throws(() => uninstallCodex(opts(homeDir)), /hooks\.json is not valid JSON/);
+  assert.equal(fs.readFileSync(hooksFile, 'utf8'), '{ not json');
+  assert.ok(fs.existsSync(appDir));
+});
+
+test('run uninstall codex reports what it removed', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  const io = { out: (s) => out.push(s), err: () => {}, env: {}, homeDir, platform: process.platform, cwd: homeDir };
+  run(['install', 'codex'], io);
+  out.length = 0;
+  assert.equal(run(['uninstall', 'codex'], io), 0);
+  assert.match(out.join('\n'), /Removed hooks: PostToolUse, Stop/);
+  assert.match(out.join('\n'), /Removed app: /);
+  out.length = 0;
+  assert.equal(run(['uninstall', 'codex'], io), 0);
+  assert.match(out.join('\n'), /Codex hooks were not installed\./);
 });
 
 test('doctor reports trust from config.toml without writing it', (t) => {
