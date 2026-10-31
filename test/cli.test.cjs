@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { installCodex, doctor, run } = require('../bin/cli.cjs');
+const { installCodex, doctor, status, run } = require('../bin/cli.cjs');
 
 function tempHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pog-cli-'));
@@ -218,4 +218,64 @@ test('a hand-edited PostToolUse matcher is left alone and not reported as update
   assert.deepEqual([r.added, r.updated], [[], []]);
   assert.equal(fs.readFileSync(file, 'utf8'), before);
   assert.equal(readHooks(homeDir).hooks.PostToolUse[0].matcher, '.*');
+});
+
+// ---- status ----
+function writeStatusLedger(homeDir, name, ledger, mtime) {
+  const dir = doctor(opts(homeDir)).ledgerDirs.find((d) => d.includes('proof-of-green')) ||
+    path.join(homeDir, process.platform === 'win32' ? 'AppData/Local' : '.local/state', 'proof-of-green');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(ledger));
+  if (mtime) fs.utimesSync(file, mtime, mtime);
+  return file;
+}
+const statusIo = (homeDir, out) => ({ ...opts(homeDir), cwd: homeDir, out: (s) => out.push(s), err: () => {} });
+
+test('status without a ledger says so and exits 0', (t) => {
+  const homeDir = tempHome(t);
+  const out = [];
+  assert.equal(run(['status'], statusIo(homeDir, out)), 0);
+  assert.deepEqual(out, ['No ledger yet.']);
+});
+
+test('status reports the newest ledger, ignores logs, and would block after an edit with no test', (t) => {
+  const homeDir = tempHome(t);
+  const old = new Date(Date.now() - 86400000);
+  writeStatusLedger(homeDir, 'a.json', { turn: '1', nextSeq: 2, records: [] }, old);
+  const newest = writeStatusLedger(homeDir, 'b.json', {
+    turn: '2', nextSeq: 3,
+    records: [
+      { seq: 0, turn: '1', kind: 'edit', path: 'old.js' },
+      { seq: 1, turn: '2', kind: 'edit', path: 'src/x.js' },
+    ],
+  });
+  fs.writeFileSync(path.join(path.dirname(newest), 'errors.log'), 'boom\n');
+  fs.writeFileSync(path.join(path.dirname(newest), 'debug.log'), 'x\n');
+  const out = [];
+  assert.equal(run(['status', '--json'], statusIo(homeDir, out)), 0);
+  const r = JSON.parse(out[0]);
+  assert.equal(r.ledger, newest);
+  assert.equal(r.turn, '2');
+  assert.deepEqual(r.edits, ['x.js']);
+  assert.deepEqual(r.commands, []);
+  assert.equal(r.decision.action, 'block');
+  const text = [];
+  run(['status'], statusIo(homeDir, text));
+  assert.match(text.join('\n'), /Would block: .*x\.js/);
+  assert.match(text.join('\n'), /Turn: 2/);
+});
+
+test('status lists commands and allows after a passing test; caps edits at 10', (t) => {
+  const homeDir = tempHome(t);
+  const records = [];
+  for (let i = 0; i < 12; i++) records.push({ seq: i, turn: '1', kind: 'edit', path: `d/f${i}.js` });
+  records.push({ seq: 12, turn: '1', kind: 'command', command: 'npm test', isTest: true, result: 'pass', via: 'npm' });
+  writeStatusLedger(homeDir, 'c.json', { turn: '1', nextSeq: 13, records });
+  const out = [];
+  run(['status'], statusIo(homeDir, out));
+  const text = out.join('\n');
+  assert.match(text, /\+2 more/);
+  assert.match(text, /npm test.*test.*pass.*npm/);
+  assert.match(text, /Would allow$/m);
 });

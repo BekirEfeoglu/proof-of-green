@@ -3,12 +3,14 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { ledgerDir } = require('../core/ledger.cjs');
+const { ledgerDir, readLedgerFile, currentTurnRecords } = require('../core/ledger.cjs');
+const { loadConfig } = require('../core/config.cjs');
+const { stopDecision } = require('../adapters/common.cjs');
 
 const PKG_ROOT = path.join(__dirname, '..');
 const TRUST_NOTE =
   'Codex skips new hooks until you trust them: run /hooks in Codex and trust the proof-of-green hooks.';
-const USAGE = 'Usage: proof-of-green install codex | doctor [--json]';
+const USAGE = 'Usage: proof-of-green install codex | doctor [--json] | status [--json]';
 
 const toSlash = (p) => p.replace(/\\/g, '/');
 const norm = (p) => toSlash(p).toLowerCase();
@@ -113,6 +115,14 @@ function claudeInstalled(homeDir) {
   return false;
 }
 
+function allLedgerDirs({ homeDir, env, platform }) {
+  return [...new Set([
+    ...claudePluginLedgerDirs(homeDir),
+    ledgerDir('claude', env, platform, homeDir),
+    ledgerDir('codex', env, platform, homeDir),
+  ])];
+}
+
 function doctor({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
   const hooksFile = path.join(homeDir, '.codex', 'hooks.json');
   let codexInstalled = false;
@@ -129,11 +139,7 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
     codexInstalled = has('PostToolUse', 'post-tool') && has('Stop', 'stop');
   } catch { /* missing or unreadable: not installed */ }
 
-  const ledgerDirs = [...new Set([
-    ...claudePluginLedgerDirs(homeDir),
-    ledgerDir('claude', env, platform, homeDir),
-    ledgerDir('codex', env, platform, homeDir),
-  ])];
+  const ledgerDirs = allLedgerDirs({ homeDir, env, platform });
   const lines = [];
   for (const dir of ledgerDirs) {
     try {
@@ -162,6 +168,67 @@ function claudePluginLedgerDirs(homeDir) {
   } catch {
     return [];
   }
+}
+
+function newestLedgerFile(dirs) {
+  let best = null;
+  for (const dir of dirs) {
+    let names;
+    try { names = fs.readdirSync(dir); } catch { continue; }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const file = path.join(dir, name);
+      try {
+        const st = fs.statSync(file);
+        if (st.isFile() && (!best || st.mtimeMs > best.mtimeMs)) best = { file, mtimeMs: st.mtimeMs };
+      } catch { /* vanished */ }
+    }
+  }
+  return best;
+}
+
+function status({ homeDir = os.homedir(), env = process.env, platform = process.platform, cwd = process.cwd() } = {}) {
+  const found = newestLedgerFile(allLedgerDirs({ homeDir, env, platform }));
+  if (!found) return null;
+  const ledger = readLedgerFile(found.file);
+  const records = currentTurnRecords(ledger);
+  const config = loadConfig(cwd, env, homeDir);
+  const names = [];
+  for (const r of records) {
+    if (r && r.kind === 'edit') {
+      const name = path.basename(String(r.path));
+      if (!names.includes(name)) names.push(name);
+    }
+  }
+  const commands = records
+    .filter((r) => r && r.kind === 'command')
+    .map((r) => ({ command: r.command, isTest: r.isTest === true, result: r.result, via: r.via }));
+  return {
+    ledger: found.file,
+    modified: new Date(found.mtimeMs).toISOString(),
+    turn: ledger.turn,
+    edits: names,
+    commands,
+    decision: stopDecision(records, ledger, { enabled: true, root: config.root }, false),
+  };
+}
+
+function formatStatus(r) {
+  if (!r) return 'No ledger yet.';
+  const shown = r.edits.slice(0, 10).join(', ');
+  const edits = r.edits.length ? (r.edits.length > 10 ? `${shown} (+${r.edits.length - 10} more)` : shown) : 'none';
+  const d = r.decision;
+  const verdict = d.action === 'block' ? `Would block: ${d.reason}`
+    : d.systemMessage ? `Would allow with note: ${d.systemMessage}` : 'Would allow';
+  return [
+    `Ledger: ${r.ledger}`,
+    `Modified: ${r.modified}`,
+    `Turn: ${r.turn}`,
+    `Edits this turn: ${edits}`,
+    r.commands.length ? 'Commands this turn:' : 'Commands this turn: none',
+    ...r.commands.map((c) => `  ${c.command} [${c.isTest ? 'test' : 'not a test'}] result=${c.result || 'none'}${c.via ? ` via=${c.via}` : ''}`),
+    verdict,
+  ].join('\n');
 }
 
 function formatReport(r) {
@@ -198,6 +265,11 @@ function run(argv, io) {
       io.out(argv.includes('--json') ? JSON.stringify(r, null, 2) : formatReport(r));
       return 0;
     }
+    if (cmd === 'status') {
+      const r = status(ctx);
+      io.out(r && argv.includes('--json') ? JSON.stringify(r, null, 2) : formatStatus(r));
+      return 0;
+    }
   } catch (err) {
     io.err(`proof-of-green: ${err.message}`);
     return 1;
@@ -206,7 +278,7 @@ function run(argv, io) {
   return 1;
 }
 
-module.exports = { installCodex, doctor, run };
+module.exports = { installCodex, doctor, status, run };
 
 if (require.main === module) {
   process.exitCode = run(process.argv.slice(2), {

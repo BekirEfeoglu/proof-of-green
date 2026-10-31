@@ -21,10 +21,10 @@ function ledgerDir(agent, env, platform = process.platform, homeDir = os.homedir
 const fileFor = (dir, sessionId) =>
   path.join(dir, crypto.createHash('sha256').update(String(sessionId)).digest('hex') + '.json');
 
-function readLedger(dir, sessionId) {
+function readLedgerFile(file) {
   const empty = { turn: '0', nextSeq: 1, records: [] };
   try {
-    const data = JSON.parse(fs.readFileSync(fileFor(dir, sessionId), 'utf8'));
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!data || typeof data !== 'object' || Array.isArray(data)) return empty;
     return {
       turn: typeof data.turn === 'string' ? data.turn : empty.turn,
@@ -33,6 +33,8 @@ function readLedger(dir, sessionId) {
     };
   } catch { return empty; }
 }
+
+const readLedger = (dir, sessionId) => readLedgerFile(fileFor(dir, sessionId));
 
 function prune(dir) {
   try {
@@ -96,4 +98,4 @@ function logError(dir, err) {
   } catch { /* logging must never throw */ }
 }
 
-module.exports = { ledgerDir, readLedger, writeLedger, currentTurnRecords, logError };
+module.exports = { ledgerDir, readLedger, readLedgerFile, writeLedger, currentTurnRecords, logError };

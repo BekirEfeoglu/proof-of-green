@@ -21,17 +21,21 @@ function push(ledger, record) {
   ledger.nextSeq += 1;
 }
 
-function stopResponse(records, ledger, config, payload) {
+function stopDecision(records, ledger, config, stopHookActive) {
   const latest = latestTestCommand(ledger);
-  const result = decide(records, {
+  return decide(records, {
     enabled: config.enabled,
-    stopHookActive: payload.stop_hook_active === true,
+    stopHookActive,
     suggestedCommand: latest ? latest.command : guardedSuggest(config.root),
     suggestedVia: latest ? latest.via : undefined,
   });
+}
+
+function stopResponse(records, ledger, config, payload) {
+  const result = stopDecision(records, ledger, config, payload.stop_hook_active === true);
   if (result.action === 'block') return { decision: 'block', reason: result.reason };
   if (result.systemMessage) return { systemMessage: result.systemMessage };
   return {};
 }
 
-module.exports = { push, stopResponse };
+module.exports = { push, stopResponse, stopDecision };
