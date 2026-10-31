@@ -11,6 +11,9 @@
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude stop", "timeout": 10 } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/gate.cjs\" claude subagent-stop", "timeout": 10 } ] }
     ]
   }
 }

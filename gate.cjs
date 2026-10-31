@@ -5,7 +5,7 @@ const { handleClaude } = require('./adapters/claude.cjs');
 const { handleCodex } = require('./adapters/codex.cjs');
 
 const ADAPTERS = {
-  claude: { handle: handleClaude, events: new Set(['user-prompt', 'post-tool', 'post-tool-failure', 'stop']) },
+  claude: { handle: handleClaude, events: new Set(['user-prompt', 'post-tool', 'post-tool-failure', 'stop', 'subagent-stop']) },
   codex: { handle: handleCodex, events: new Set(['post-tool', 'stop']) },
 };
 

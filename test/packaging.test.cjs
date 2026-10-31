@@ -53,7 +53,7 @@ test('plugin version and license match package.json', () => {
   assert.equal(plugin.license, pkg.license);
 });
 
-test('hooks.json declares the four gate events with the right matchers', () => {
+test('hooks.json declares the five gate events with the right matchers', () => {
   const summary = {};
   for (const { name, group, event } of handlers) {
     summary[name] = { matcher: group.matcher, event };
@@ -63,11 +63,12 @@ test('hooks.json declares the four gate events with the right matchers', () => {
     PostToolUse: { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|mcp__.*', event: 'post-tool' },
     PostToolUseFailure: { matcher: 'Bash|PowerShell|mcp__.*', event: 'post-tool-failure' },
     Stop: { matcher: undefined, event: 'stop' },
+    SubagentStop: { matcher: undefined, event: 'subagent-stop' },
   });
 });
 
 test('every handler is a string-form node command with a timeout', () => {
-  assert.equal(handlers.length, 4);
+  assert.equal(handlers.length, 5);
   for (const { handler, agent } of handlers) {
     assert.equal(handler.type, 'command');
     assert.match(handler.command, COMMAND);

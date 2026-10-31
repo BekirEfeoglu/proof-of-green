@@ -295,3 +295,112 @@ test('a tool listed in both testTools and editTools is treated as a test tool', 
   s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' }, tool_response: mcpResponse(0) });
   assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command']);
 });
+
+// ---- subagents (agent_id) ----
+const AGENT = 'a745dd613b6b01ba0';
+const OTHER = 'b000000000000000b';
+const asAgent = (id, payload) => ({ agent_id: id, agent_type: 'general-purpose', ...payload });
+
+test('records from an event with agent_id carry agent; the main agent records do not', (t) => {
+  const s = setup(t, { ...mcpConfig, ...editCfg });
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: mcpResponse(0) }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: EDIT_MCP, tool_input: { path: 'src/b.ts' } }));
+  s.send('post-tool-failure', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/c.ts' } });
+  s.send('post-tool', { agent_id: '', tool_name: 'Edit', tool_input: { file_path: 'src/d.ts' } });
+  s.send('post-tool', { agent_id: 7, tool_name: 'Edit', tool_input: { file_path: 'src/e.ts' } });
+  assert.deepEqual(s.ledger().records.map((r) => r.agent), [AGENT, AGENT, AGENT, AGENT, AGENT, undefined, undefined, undefined]);
+});
+
+test('subagent-stop blocks when its own edit has no passing test', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  const out = s.send('subagent-stop', asAgent(AGENT, {}));
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /a\.ts/);
+});
+
+test('subagent-stop allows after its own passing test', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, {})), {});
+});
+
+test('subagent-stop blocks after its own failing test', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool-failure', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  assert.equal(s.send('subagent-stop', asAgent(AGENT, {})).decision, 'block');
+});
+
+test('subagent-stop ignores edits by the parent and by other agents', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/parent.ts' } });
+  s.send('post-tool', asAgent(OTHER, { tool_name: 'Edit', tool_input: { file_path: 'src/other.ts' } }));
+  assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, {})), {});
+});
+
+test('subagent-stop does not count tests run by the parent or other agents', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test' } });
+  s.send('post-tool', asAgent(OTHER, { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
+  const out = s.send('subagent-stop', asAgent(AGENT, {}));
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /a\.ts/);
+  assert.doesNotMatch(out.reason, /parent|other/);
+});
+
+test('subagent-stop ignores the agent records of an earlier turn', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('user-prompt', {});
+  assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, {})), {});
+});
+
+test('subagent-stop with stop_hook_active true allows', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  assert.deepEqual(s.send('subagent-stop', asAgent(AGENT, { stop_hook_active: true })), {});
+});
+
+test('subagent-stop without a non-empty string agent_id allows', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } });
+  assert.deepEqual(s.send('subagent-stop', {}), {});
+  assert.deepEqual(s.send('subagent-stop', { agent_id: '' }), {});
+  assert.deepEqual(s.send('subagent-stop', { agent_id: 7 }), {});
+});
+
+test('subagent-stop suggests the latest test command from its own records', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Bash', tool_input: { command: 'npx vitest run' } }));
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'npx jest' } });
+  const out = s.send('subagent-stop', asAgent(AGENT, {}));
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /npx vitest run/);
+  assert.doesNotMatch(out.reason, /npx jest/);
+});
+
+test('parent stop still blocks on an untested subagent edit', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', asAgent(AGENT, { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } }));
+  const out = s.send('stop', {});
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /a\.ts/);
+});

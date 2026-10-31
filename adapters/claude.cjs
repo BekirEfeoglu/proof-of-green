@@ -9,6 +9,9 @@ const { stopResponse } = require('./common.cjs');
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
+// Claude Code adds agent_id to the events of a subagent; the main agent's events have none.
+const agentIdOf = (p) => (typeof p.agent_id === 'string' && p.agent_id ? p.agent_id : null);
+
 function recordTool(out, payload, cwd, config, result) {
   const tool = payload.tool_name;
   const input = payload.tool_input && typeof payload.tool_input === 'object' ? payload.tool_input : {};
@@ -81,12 +84,21 @@ function handleClaude(event, payload, ctx) {
     case 'post-tool-failure': {
       const out = [];
       recordTool(out, p, cwd, config, event === 'post-tool' ? 'pass' : 'fail');
-      for (const record of out) appendRecord(dir, p.session_id, record);
+      const agent = agentIdOf(p);
+      for (const record of out) appendRecord(dir, p.session_id, agent ? { ...record, agent } : record);
       return {};
     }
     case 'stop': {
       const ledger = readLedger(dir, p.session_id);
       return stopResponse(currentTurnRecords(ledger), ledger, config, p);
+    }
+    case 'subagent-stop': {
+      // Judge the subagent on its own records only; the parent's stop still sees all of them.
+      const agent = agentIdOf(p);
+      if (p.stop_hook_active === true || !agent) return {};
+      const ledger = readLedger(dir, p.session_id);
+      const own = { ...ledger, records: ledger.records.filter((r) => r.agent === agent) };
+      return stopResponse(currentTurnRecords(own), own, config, p);
     }
     default:
       return {};

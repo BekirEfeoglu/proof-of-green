@@ -288,3 +288,23 @@ test('doctor prints singular and plural tool counts from a temp home config', (t
   });
   assert.ok(r.stdout.includes('(1 test tool, 2 edit tools)'), r.stdout + r.stderr);
 });
+
+test('subagent: own untested edit blocks at subagent-stop, its passing test allows', (t) => {
+  const s = setup(t);
+  const sub = (payload) => ({ agent_id: 'a745dd613b6b01ba0', agent_type: 'general-purpose', ...payload });
+  s.run('user-prompt', {});
+  s.run('post-tool', sub(edit));
+  const r = s.run('subagent-stop', sub({ stop_hook_active: false, last_assistant_message: 'done' }));
+  assert.equal(r.status, 0);
+  const blocked = JSON.parse(r.out);
+  assert.equal(blocked.decision, 'block');
+  assert.match(blocked.reason, /a\.ts/);
+  s.run('post-tool', sub(npmTest));
+  assert.equal(s.run('subagent-stop', sub({ stop_hook_active: false })).out, '{}');
+});
+
+test('codex: subagent-stop gives {}', (t) => {
+  const s = setupCodex(t);
+  s.run('post-tool', { ...codexPatch, agent_id: 'x1' });
+  assert.equal(s.run('subagent-stop', { agent_id: 'x1' }).out, '{}');
+});
