@@ -7,6 +7,7 @@ const path = require('node:path');
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const TMP_MAX_AGE_MS = 3600 * 1000;
 const APP = 'proof-of-green';
+const APPEND_ATTEMPTS = 3;
 
 function ledgerDir(agent, env, platform = process.platform, homeDir = os.homedir()) {
   const e = env && typeof env === 'object' ? env : {};
@@ -35,7 +36,8 @@ function readJsonLedger(file) {
 }
 
 // Replays <base>.jsonl on top of the legacy <base>.json. Each record gets its seq from its
-// position and the turn in effect when it was appended; unparsable or torn lines are skipped.
+// position and, unless it stores its own string turn, the turn in effect when it was appended;
+// unparsable or torn lines are skipped.
 // agent-stop lines only mark a subagent as stopped (stoppedAgents); they are not records.
 function readBase(base) {
   const ledger = { ...readJsonLedger(base + '.json'), stoppedAgents: new Set() };
@@ -50,7 +52,7 @@ function readBase(base) {
     } else if (entry.kind === 'agent-stop') {
       if (typeof entry.agent === 'string' && entry.agent) ledger.stoppedAgents.add(entry.agent);
     } else if (entry.kind === 'edit' || entry.kind === 'command') {
-      ledger.records.push({ ...entry, seq: ledger.nextSeq, turn: ledger.turn });
+      ledger.records.push({ ...entry, seq: ledger.nextSeq, turn: typeof entry.turn === 'string' ? entry.turn : ledger.turn });
       ledger.nextSeq += 1;
     }
   }
@@ -90,13 +92,27 @@ function endsTorn(file) {
   }
 }
 
+// Windows can briefly lock the file (antivirus, a concurrent reader): retry before giving up.
+function appendWithRetry(file, text) {
+  for (let attempt = 1; ; attempt++) {
+    try { return fs.appendFileSync(file, text); } catch (err) {
+      if (attempt >= APPEND_ATTEMPTS || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err;
+    }
+  }
+}
+
 // One appendFileSync call per line: parallel hooks each add their line instead of
 // overwriting each other's read-modify-write. May throw; callers run inside gate's fail-open catch.
 function appendLine(dir, sessionId, entry) {
   fs.mkdirSync(dir, { recursive: true });
-  const file = baseFor(dir, sessionId) + '.jsonl';
+  const base = baseFor(dir, sessionId);
+  const file = base + '.jsonl';
+  // The first line next to a legacy .json carries its turn, so the turn outlives that file.
+  const marker = !fs.existsSync(file) && fs.existsSync(base + '.json')
+    ? JSON.stringify({ kind: 'turn', turn: readJsonLedger(base + '.json').turn }) + '\n'
+    : '';
   // Start on a fresh line after a torn append so this record is not glued onto it.
-  fs.appendFileSync(file, (endsTorn(file) ? '\n' : '') + JSON.stringify(entry) + '\n');
+  appendWithRetry(file, (endsTorn(file) ? '\n' : '') + marker + JSON.stringify(entry) + '\n');
   prune(dir);
 }
 

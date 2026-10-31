@@ -161,7 +161,8 @@ function handleCodex(event, payload, ctx) {
     if (newTurn) startTurn(dir, p.session_id, p.turn_id);
     const out = [];
     recordTool(out, p, cwd, config);
-    for (const record of out) appendRecord(dir, p.session_id, record);
+    // The record keeps its own turn, so it stays in that turn even if the marker line is lost.
+    for (const record of out) appendRecord(dir, p.session_id, typeof p.turn_id === 'string' && p.turn_id ? { ...record, turn: p.turn_id } : record);
     return {};
   }
   const records = resolveResults(currentTurnRecords(ledger), readCommandResults(p.transcript_path), ledger.records, ledger.turn);

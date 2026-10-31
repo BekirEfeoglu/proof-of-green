@@ -82,6 +82,18 @@ test('a new turn_id starts a new turn; a missing turn_id keeps the current one',
   assert.deepEqual(records.map((r) => r.turn), ['turn-1', 'turn-1', 'turn-2', 'turn-2']);
 });
 
+test('records store their own turn_id, so a lost turn marker cannot move them', (t) => {
+  const s = setup(t);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', { ...bash('npm test', 'c1'), turn_id: 'turn-2' });
+  const file = fs.readdirSync(s.dir).find((n) => n.endsWith('.jsonl'));
+  const lines = fs.readFileSync(path.join(s.dir, file), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.filter((l) => l.kind !== 'turn').map((l) => l.turn), ['turn-1', 'turn-1', 'turn-2']);
+  // Without the turn marker the turn-2 record still replays into turn-2.
+  fs.writeFileSync(path.join(s.dir, file), lines.filter((l) => l.kind !== 'turn').map((l) => JSON.stringify(l)).join('\n') + '\n');
+  assert.deepEqual(s.ledger().records.map((r) => r.turn), ['turn-1', 'turn-1', 'turn-2']);
+});
+
 test('stop with transcript_path null allows with a systemMessage', (t) => {
   const s = setup(t);
   s.send('post-tool', patchTool());

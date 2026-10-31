@@ -43,11 +43,15 @@ test('turn markers alone set the turn', (t) => {
   assert.deepEqual(readLedger(d, 's1'), { turn: 'turn-b', nextSeq: 1, records: [], stoppedAgents: new Set() });
 });
 
-test('seq or turn fields stored in a line never override the replayed ones', (t) => {
+test('a stored seq never overrides the replayed one; a stored string turn is kept', (t) => {
   const d = mk(t);
   startTurn(d, 's1', '2');
   appendRecord(d, 's1', { kind: 'edit', path: 'a.js', seq: 99, turn: '7' });
-  assert.deepEqual(readLedger(d, 's1').records, [{ seq: 1, turn: '2', kind: 'edit', path: 'a.js' }]);
+  appendRecord(d, 's1', { kind: 'edit', path: 'b.js', turn: 7 });
+  assert.deepEqual(readLedger(d, 's1').records, [
+    { seq: 1, turn: '7', kind: 'edit', path: 'a.js' },
+    { seq: 2, turn: '2', kind: 'edit', path: 'b.js' },
+  ]);
 });
 
 test('a truncated last line and unparsable or unknown lines are skipped', (t) => {
@@ -338,4 +342,62 @@ test('agent-stop lines take no seq and are not records; they fill stoppedAgents'
   assert.deepEqual(l.records.map((r) => [r.seq, r.path]), [[1, 'a.js'], [2, 'b.js']]);
   assert.equal(l.nextSeq, 3);
   assert.deepEqual([...l.stoppedAgents], ['A']);
+});
+
+test('the first append next to a legacy .json writes its current turn as a marker first', (t) => {
+  const d = mk(t);
+  const legacy = path.join(d, sha('s1') + '.json');
+  fs.writeFileSync(legacy, JSON.stringify({ turn: '4', nextSeq: 1, records: [] }));
+  appendRecord(d, 's1', { kind: 'edit', path: 'a.js' });
+  appendRecord(d, 's1', { kind: 'edit', path: 'b.js' });
+  const lines = fs.readFileSync(jsonl(d, 's1'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => l.kind), ['turn', 'edit', 'edit']);
+  // Once the legacy file is pruned, the .jsonl alone still knows the turn.
+  fs.unlinkSync(legacy);
+  const l = readLedger(d, 's1');
+  assert.equal(l.turn, '4');
+  assert.deepEqual(l.records.map((r) => r.turn), ['4', '4']);
+});
+
+test('without a legacy .json no turn marker is added', (t) => {
+  const d = mk(t);
+  appendRecord(d, 's1', { kind: 'edit', path: 'a.js' });
+  assert.equal(fs.readFileSync(jsonl(d, 's1'), 'utf8').trim().split('\n').length, 1);
+});
+
+function stubAppend(t, codes) {
+  const real = fs.appendFileSync;
+  let calls = 0;
+  fs.appendFileSync = (file, ...rest) => {
+    if (String(file).endsWith('.jsonl')) {
+      calls += 1;
+      const code = codes[calls - 1];
+      if (code) throw Object.assign(new Error(code), { code });
+    }
+    return real(file, ...rest);
+  };
+  t.after(() => { fs.appendFileSync = real; });
+  return () => calls;
+}
+
+test('appendRecord retries a busy or locked append up to 3 attempts', (t) => {
+  const d = mk(t);
+  const calls = stubAppend(t, ['EBUSY', 'EPERM']);
+  appendRecord(d, 's1', { kind: 'edit', path: 'a.js' });
+  assert.equal(calls(), 3);
+  assert.deepEqual(readLedger(d, 's1').records.map((r) => r.path), ['a.js']);
+});
+
+test('startTurn rethrows after 3 busy attempts', (t) => {
+  const d = mk(t);
+  const calls = stubAppend(t, ['EBUSY', 'EBUSY', 'EBUSY', 'EBUSY']);
+  assert.throws(() => startTurn(d, 's1', '1'), { code: 'EBUSY' });
+  assert.equal(calls(), 3);
+});
+
+test('other append errors are not retried', (t) => {
+  const d = mk(t);
+  const calls = stubAppend(t, ['ENOSPC']);
+  assert.throws(() => appendRecord(d, 's1', { kind: 'edit', path: 'a.js' }), { code: 'ENOSPC' });
+  assert.equal(calls(), 1);
 });
