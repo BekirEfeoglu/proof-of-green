@@ -147,3 +147,10 @@ test('PROOF_OF_GREEN_TEST_THROW makes the adapter throw', (t) => {
   const s = setup(t);
   assert.throws(() => handleClaude('user-prompt', { session_id: 's1' }, { ...s.ctx, env: { PROOF_OF_GREEN_TEST_THROW: '1' } }));
 });
+
+test('a background shell run never counts as a test', (t) => {
+  const s = setup(t);
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } });
+  s.send('post-tool', { tool_name: 'PowerShell', tool_input: { command: 'npm test', run_in_background: true } });
+  assert.deepEqual(s.ledger().records.map((r) => r.isTest), [false, false]);
+});

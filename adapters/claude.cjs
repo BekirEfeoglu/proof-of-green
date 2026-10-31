@@ -24,7 +24,8 @@ function recordTool(ledger, payload, cwd, config, result) {
     push(ledger, {
       kind: 'command',
       command: input.command,
-      isTest: isTestCommand(input.command, config.testPatterns),
+      // A background run reports success when it starts, not when the tests finish.
+      isTest: input.run_in_background !== true && isTestCommand(input.command, config.testPatterns),
       result,
     });
     return true;

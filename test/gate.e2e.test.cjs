@@ -152,3 +152,11 @@ test('codex: throwing adapter fails open and logs to the codex ledger dir', (t) 
   const log = fs.readFileSync(path.join(s.state, 'proof-of-green', 'errors.log'), 'utf8');
   assert.match(log, /PROOF_OF_GREEN_TEST_THROW/);
 });
+
+test('edit, background npm test that "passes", stop blocks', (t) => {
+  const s = setup(t);
+  s.run('user-prompt', {});
+  s.run('post-tool', edit);
+  s.run('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } });
+  assert.equal(JSON.parse(s.run('stop', {}).out).decision, 'block');
+});
