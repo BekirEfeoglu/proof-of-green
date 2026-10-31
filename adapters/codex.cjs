@@ -45,10 +45,10 @@ function innerScript(c) {
 
 // MCP calls may carry their arguments as a JSON string; anything but a plain object is {}.
 function parseInput(raw) {
-  if (typeof raw !== 'string') return raw && typeof raw === 'object' ? raw : {};
+  const plain = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  if (typeof raw !== 'string') return plain(raw);
   try {
-    const v = JSON.parse(raw);
-    return v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    return plain(JSON.parse(raw));
   } catch {
     return {};
   }

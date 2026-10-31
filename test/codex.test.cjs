@@ -306,3 +306,11 @@ test('a listed MCP call with a JSON string tool_input records its command', (t) 
     { kind: 'command', command: 'npm test', via: MCP, isTest: true, result: 'pass' },
   ]);
 });
+
+test('an array tool_input is not a plain object and records nothing', (t) => {
+  const s = setup(t, listed);
+  const arr = ['npm test'];
+  arr.komut = 'npm test';
+  s.send('post-tool', { tool_name: MCP, tool_input: arr, tool_response: mcpText(0) });
+  assert.equal(s.ledger().records.length, 0);
+});
