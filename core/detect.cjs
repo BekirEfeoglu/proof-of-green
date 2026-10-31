@@ -25,9 +25,10 @@ const stripRunner = (s) => s.replace(/^(?:uv|poetry|pipenv|hatch|pdm)\s+run\s+/,
 
 // Separators: &&, ||, ;, newline, | and a lone & (not part of 2>&1 or &>).
 const SEPARATOR = /(&&|\|\||\r?\n|;|\||(?<![<>&])&(?![>&]))/;
-// PowerShell's `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }` tail checks the result, so it may follow a test,
-// unless the tail (else block included) runs `exit` or assigns LASTEXITCODE.
-const PS_RESULT_CHECK = /;\s*if\s*\(\s*\$(?:\?|LASTEXITCODE\b[^)]*)\)\s*\{[^{}]*\}(?:\s*else\s*\{[^{}]*\})?\s*$/i;
+// A final PowerShell `; if ($?) { ... }` or `; if ($LASTEXITCODE -eq 0) { ... }` runs only on success, so a failure
+// keeps its exit code. Any other branch (else, -ne 0) runs a statement on failure and resets the code to 0.
+// The body still may not run `exit` or assign LASTEXITCODE.
+const PS_RESULT_CHECK = /;\s*if\s*\(\s*\$(?:\?|LASTEXITCODE\s+-eq\s+0)\s*\)\s*\{[^{}]*\}\s*$/i;
 const RESETS_EXIT = /\bexit\b|LASTEXITCODE\s*=/i;
 const PIPEFAIL = /^set\s+([-+])[A-Za-z]*o\s+pipefail\b/;
 

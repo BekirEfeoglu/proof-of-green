@@ -76,7 +76,7 @@ You can add your own patterns in the config file.
 The exit code the agent sees has to be the test's. So every command after the first test command must be joined with `&&`. Anything else can hide a failure: `npm test; echo done`, `npm test || echo failed` and `npm test &` don't count, and neither do `npm test; pytest` or `npm test || npm test`, where a later run could cover up an earlier failed one. Commands before the first test don't matter, so `npm run lint; npm test` counts. Two exceptions:
 
 - A pipe is fine while `set -o pipefail` is on. The last `set -o pipefail` or `set +o pipefail` before the pipe decides.
-- A PowerShell check at the end, `; if ($?) { ... }` or `; if ($LASTEXITCODE ...) { ... }`, is fine. The `if` block, and any `else` block, may not contain `exit` or assign `LASTEXITCODE`.
+- A PowerShell check at the very end is fine if it is exactly `; if ($?) { ... }` or `; if ($LASTEXITCODE -eq 0) { ... }`, with no `else` or `elseif`. The block runs only when the test passed, so a failure keeps its exit code. It may not contain `exit` or assign `LASTEXITCODE`. Any other check, such as `if ($LASTEXITCODE -ne 0) { ... }`, runs a command after a failure, which resets PowerShell's exit code to 0, so it doesn't count.
 
 A matching command also does not count if its result is masked or faked:
 

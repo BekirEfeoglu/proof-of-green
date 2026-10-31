@@ -44,6 +44,14 @@ test('a PowerShell if tail that exits or resets LASTEXITCODE masks the test', ()
   for (const c of ['npm test; if ($?) { "ok" }', 'npm test; if ($LASTEXITCODE -eq 0) { "ok" }'])
     assert.equal(isTestCommand(c), true, c);
 });
+test('only a success-branch PowerShell check may follow a test', () => {
+  const masked = ['npm test; if ($?) {"ok"} else {"bad"}', 'npm test; if ($?) { "ok" } else { Write-Host bad }',
+    'npm test; if ($LASTEXITCODE -ne 0) { "failed" }', 'npm test; if ($LASTEXITCODE -ne 0) { Write-Host failed }',
+    'npm test; if ($LASTEXITCODE -ne 0) { cmd /c ver }', 'npm test; if ($LASTEXITCODE -ne 0) { $host.SetShouldExit(0) }'];
+  for (const c of masked) assert.equal(isTestCommand(c), false, c);
+  for (const c of ['npm test; if ($?) { "ok" }', 'npm test; if ($LASTEXITCODE -EQ 0) {"ok"}'])
+    assert.equal(isTestCommand(c), true, c);
+});
 test('pipefail follows the last set before the pipe', () =>
   assert.equal(isTestCommand('set -o pipefail; set +o pipefail; npm test | tail'), false));
 test('recognizes common runner wrappers', () => {
