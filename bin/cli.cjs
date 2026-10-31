@@ -87,14 +87,23 @@ function codexTrusted(configFile, hooksFile) {
   return false;
 }
 
+function readJsonObject(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
 function claudeInstalled(homeDir) {
-  try {
-    const data = JSON.parse(
-      fs.readFileSync(path.join(homeDir, '.claude', 'plugins', 'installed_plugins.json'), 'utf8'),
-    );
-    const table = data && typeof data.plugins === 'object' && data.plugins ? data.plugins : data;
-    return Object.keys(table || {}).some((k) => k.startsWith('proof-of-green@'));
-  } catch { return false; }
+  const claudeDir = path.join(homeDir, '.claude');
+  const installed = readJsonObject(path.join(claudeDir, 'plugins', 'installed_plugins.json'));
+  if (installed && typeof installed === 'object') {
+    const table = installed.plugins && typeof installed.plugins === 'object' ? installed.plugins : installed;
+    if (Object.keys(table).some((k) => k.startsWith('proof-of-green@'))) return true;
+  }
+  const settings = readJsonObject(path.join(claudeDir, 'settings.json'));
+  const enabled = settings && settings.enabledPlugins;
+  if (enabled && typeof enabled === 'object') {
+    return Object.entries(enabled).some(([k, v]) => k.startsWith('proof-of-green@') && Boolean(v));
+  }
+  return false;
 }
 
 function doctor({ homeDir = os.homedir(), env = process.env, platform = process.platform } = {}) {
@@ -102,13 +111,15 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
   let codexInstalled = false;
   try {
     const data = JSON.parse(fs.readFileSync(hooksFile, 'utf8'));
-    codexInstalled = Object.values((data && data.hooks) || {}).some(
-      (groups) => Array.isArray(groups) && groups.some(
+    const has = (event, suffix) => {
+      const groups = data && data.hooks && data.hooks[event];
+      return Array.isArray(groups) && groups.some(
         (g) => g && Array.isArray(g.hooks) && g.hooks.some(
-          (h) => h && typeof h.command === 'string' && h.command.includes('gate.cjs" codex '),
+          (h) => h && typeof h.command === 'string' && h.command.includes('gate.cjs" codex ' + suffix),
         ),
-      ),
-    );
+      );
+    };
+    codexInstalled = has('PostToolUse', 'post-tool') && has('Stop', 'stop');
   } catch { /* missing or unreadable: not installed */ }
 
   const ledgerDirs = [...new Set([

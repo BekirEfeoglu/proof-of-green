@@ -123,3 +123,28 @@ test('run install codex and doctor --json work against a temp home', (t) => {
   assert.equal(run(['install', 'codex'], io), 0);
   assert.match(out.join('\n'), /already installed/);
 });
+
+test('doctor reads enabledPlugins from settings.json', (t) => {
+  const homeDir = tempHome(t);
+  const o = { ...opts(homeDir), cwd: homeDir };
+  assert.equal(doctor(o).claude.installed, false);
+  fs.mkdirSync(path.join(homeDir, '.claude'), { recursive: true });
+  const settings = path.join(homeDir, '.claude', 'settings.json');
+  fs.writeFileSync(settings, JSON.stringify({ enabledPlugins: { 'proof-of-green@marketplace': false } }));
+  assert.equal(doctor(o).claude.installed, false);
+  fs.writeFileSync(settings, JSON.stringify({ enabledPlugins: { 'proof-of-green@marketplace': true } }));
+  assert.equal(doctor(o).claude.installed, true);
+  fs.writeFileSync(settings, '{ broken');
+  assert.equal(doctor(o).claude.installed, false);
+});
+
+test('doctor reports codex installed only when both hooks are present', (t) => {
+  const homeDir = tempHome(t);
+  const o = { ...opts(homeDir), cwd: homeDir };
+  const { hooksFile } = installCodex(opts(homeDir));
+  assert.equal(doctor(o).codex.installed, true);
+  const data = JSON.parse(fs.readFileSync(hooksFile, 'utf8'));
+  delete data.hooks.PostToolUse;
+  fs.writeFileSync(hooksFile, JSON.stringify(data));
+  assert.equal(doctor(o).codex.installed, false);
+});
