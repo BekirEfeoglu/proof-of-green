@@ -61,3 +61,22 @@ test('odd inputs are unknown and never throw', () => {
   assert.equal(readToolExitCode({ exit_code: 0 }, undefined), 'pass');
   assert.equal(readToolExitCode({ exit_code: 0 }, 42), 'unknown');
 });
+
+const wrapper = (code, extra = {}) => ({ content: [textBlock(JSON.stringify({ exit_code: code }))], ...extra });
+
+test('CallToolResult wrapper reads the field from its first text block', () => {
+  assert.equal(readToolExitCode(wrapper(0)), 'pass');
+  assert.equal(readToolExitCode(wrapper(1)), 'fail');
+});
+
+test('an isError result is a fail even when its text says exit_code 0', () => {
+  assert.equal(readToolExitCode(wrapper(0, { isError: true })), 'fail');
+  assert.equal(readToolExitCode(wrapper(0, { is_error: true })), 'fail');
+  assert.equal(readToolExitCode({ isError: true, content: [textBlock('connection refused')] }), 'fail');
+});
+
+test('a JSON string of a CallToolResult wrapper is handled the same way', () => {
+  assert.equal(readToolExitCode(JSON.stringify(wrapper(0))), 'pass');
+  assert.equal(readToolExitCode(JSON.stringify(wrapper(1))), 'fail');
+  assert.equal(readToolExitCode(JSON.stringify(wrapper(0, { isError: true }))), 'fail');
+});

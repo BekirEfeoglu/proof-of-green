@@ -23,7 +23,14 @@ function walk(value, field) {
 function readToolExitCode(response, field = 'exit_code') {
   try {
     if (typeof field !== 'string') return 'unknown';
-    const code = walk(responseValue(response), field);
+    const value = responseValue(response);
+    // An MCP CallToolResult wrapper: an error result is never a pass, and the payload sits
+    // in the first text block of `content`.
+    if (isObject(value) && (value.isError === true || value.is_error === true)) return 'fail';
+    let code = walk(value, field);
+    if (code === undefined && isObject(value) && Array.isArray(value.content)) {
+      code = walk(responseValue(value.content), field);
+    }
     const isInt = Number.isInteger(code) || (typeof code === 'string' && /^-?\d+$/.test(code));
     if (!isInt) return 'unknown';
     return Number(code) === 0 ? 'pass' : 'fail';
