@@ -102,7 +102,7 @@ Some agents run tests through an MCP tool instead of a shell, for example on a r
 - `commandArg`: the name of the tool argument that holds the command line.
 - `exitCodeField`: optional. The field in the tool's JSON response that holds the exit code. The default is `exit_code`. A dotted path such as `result.exit_code` reaches into nested objects.
 
-The command in that argument goes through the same rules as a shell command: it has to look like a test, and anything after the first test command must be joined with `&&`. The tool's response must be JSON that carries the exit code, either as the response itself or as the text of its first text block. The exit code can be an integer or an integer string (0 is a pass, any other value is a fail). If the gate cannot read the exit code, the stop is allowed with a note that the result could not be verified.
+The command in that argument goes through the same rules as a shell command: it has to look like a test, and anything after the first test command must be joined with `&&`. The tool's response must be JSON that carries the exit code, either as the response itself or as the text of its first text block. The exit code can be an integer or an integer string (0 is a pass, any other value is a fail). A tool may report a failing command as an error; the gate still reads the exit code from the error text and counts the run as a failed test. If the gate cannot read the exit code, the stop is allowed with a note that the result could not be verified.
 
 ## Configuration
 

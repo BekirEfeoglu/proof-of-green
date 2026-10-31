@@ -13,10 +13,11 @@ Evidence from a real session with such a tool (`mcp__uzak_sunucu__sunucu_komut_c
 | Call | Result as Claude Code records it | Meaning |
 |---|---|---|
 | Command ran (exit 0 or 1) | content `[{type: "text", text: "{\"exit_code\":1,\"duration_sec\":...,\"stdout\":...,\"stderr\":...}"}]`, `is_error` false | The MCP call succeeds even when the remote test fails. Only `exit_code` inside the JSON text says pass or fail. |
+| Command failed, server flags it as an error (live check, Claude Code 2.1.316) | `PostToolUseFailure` fires; tool_result content is the same JSON text (`"exit_code": 1`, `stdout`, `stderr`), `is_error` true; `toolUseResult` is that text prefixed with `Error: ` | The test ran and failed. The exit code is in the error text. |
 | Tool error (server unreachable) | plain text, `is_error` true | No test ran. |
 | A sync tool (`sunucu_projeyi_esitle`) | same JSON shape with `exit_code` | Not a test. Must not count. |
 
-So the gate must be told which tools run tests and where the result is, and must read the result from the response body. `PostToolUseFailure` does not fire for a failed remote test.
+So the gate must be told which tools run tests and where the result is, and must read the result from the response body. A server may report a failing command either as a normal result with a non-zero `exit_code` or as an error, in which case Claude Code fires `PostToolUseFailure`. The gate reads the exit code in both cases; only an error whose text has no readable exit code means no test ran.
 
 ## Goal
 
@@ -78,7 +79,7 @@ Claude Code:
 
 - `hooks/hooks.json`: the `PostToolUse` matcher becomes `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|mcp__.*`, the `PostToolUseFailure` matcher `Bash|PowerShell|mcp__.*`.
 - `post-tool` for a tool listed in `testTools`: append a command record with `command = tool_input[commandArg]`, `via = tool name`, `isTest = isTestCommand(command, testPatterns)`, `result = readToolExitCode(tool_response, exitCodeField)`. A non-string command is skipped.
-- `post-tool-failure` for a listed tool: append the record with `isTest: false`, because no test ran.
+- `post-tool-failure` for a listed tool: the result is always `fail`. A server may flag a failing command as an error, so the gate reads the exit code from the `error` string (or from `tool_response` when `error` is not a string). Text that starts with `Error: ` has that prefix stripped before parsing, and such a result is never a pass, even with exit code 0. If an exit code is readable, the record has `isTest = isTestCommand(command, testPatterns)`. If not (for example the server was unreachable), the record has `isTest: false`, because no test ran.
 - MCP tools not listed are ignored.
 
 Codex:
@@ -96,7 +97,8 @@ Suggested command in the block reason: when the latest test record has `via`, th
 |---|---|
 | `komut: "npm test \|\| true"` | Not a test (existing masking rules). |
 | Response not JSON, or field missing | `unknown`: allow with a note. |
-| Tool error (`is_error`) | Not a test run: "no test command ran". |
+| Tool error (`is_error`) with a readable exit code | A failed test run: "the last test run after that change failed". |
+| Tool error (`is_error`) without a readable exit code | Not a test run: "no test command ran". |
 | Sync tool or any unlisted MCP tool | Ignored. |
 | Remote copy stale (test ran before syncing the edit) | Not detected; documented as a known limit. |
 | Same `tool` in user and project config | Project entry wins. |
