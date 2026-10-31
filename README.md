@@ -81,12 +81,12 @@ An edit counts when the file has a code extension (`.js`, `.ts`, `.py`, `.go`, `
 
 ## Configuration
 
-Everything is optional. To change the defaults, put a `.proof-of-green.json` in your project. The gate looks for it from the agent's working directory up to the git root.
+Everything is optional. To change the defaults, put a `.proof-of-green.json` in your project. The gate looks for it from the agent's working directory up to the git root. If there is no git root above the working directory, only a `.proof-of-green.json` in the working directory itself is read.
 
 ```json
 {
   "enabled": true,
-  "testCommands": ["^make verify$", "^\./scripts/test\.sh"],
+  "testCommands": ["^make verify$", "^\\./scripts/test\\.sh"],
   "include": ["scripts/**/*.sh"],
   "exclude": ["generated/**"]
 }
