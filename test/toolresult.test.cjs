@@ -75,6 +75,22 @@ test('an isError result is a fail even when its text says exit_code 0', () => {
   assert.equal(readToolExitCode({ isError: true, content: [textBlock('connection refused')] }), 'fail');
 });
 
+// The text a real MCP server returned when it flagged a failing `npm test` as an error.
+const liveErrorJson = (code) =>
+  `{\n  "exit_code": ${code},\n  "duration_sec": 0.28,\n  "stdout": "",\n  "stderr": "npm notice run test\\nnpm notice run node test.js\\nFAIL\\n"\n}`;
+
+test('an "Error: " prefixed result is read but is never a pass', () => {
+  assert.equal(readToolExitCode(`Error: ${liveErrorJson(1)}`), 'fail');
+  assert.equal(readToolExitCode(`Error: ${liveErrorJson(0)}`), 'fail');
+  assert.equal(readToolExitCode([textBlock(`Error: ${liveErrorJson(0)}`)]), 'fail');
+  assert.equal(readToolExitCode('Error: connection refused'), 'unknown');
+  assert.equal(readToolExitCode('Error: {"other":1}'), 'unknown');
+});
+
+test('an "Error: " prefixed text inside a CallToolResult wrapper is never a pass', () => {
+  assert.equal(readToolExitCode({ content: [textBlock(`Error: ${liveErrorJson(0)}`)] }), 'fail');
+});
+
 test('a JSON string of a CallToolResult wrapper is handled the same way', () => {
   assert.equal(readToolExitCode(JSON.stringify(wrapper(0))), 'pass');
   assert.equal(readToolExitCode(JSON.stringify(wrapper(1))), 'fail');

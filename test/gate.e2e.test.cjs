@@ -193,6 +193,24 @@ test('listed MCP test tool: edit, failing run blocks naming the tool, passing ru
   assert.equal(s.run('stop', {}, env).out, '{}');
 });
 
+test('listed MCP test tool: a failing run reported as an error blocks as a failed test', (t) => {
+  const s = setup(t);
+  const home = fs.mkdtempSync(path.join(os.homedir(), '.pog-e2e-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const MCP = 'mcp__uzak_sunucu__sunucu_komut_calistir';
+  fs.writeFileSync(path.join(home, '.proof-of-green.json'), JSON.stringify({ testTools: [{ tool: MCP, commandArg: 'komut' }] }));
+  const env = { HOME: home, USERPROFILE: home };
+  const error = 'Error: {\n  "exit_code": 1,\n  "duration_sec": 0.28,\n  "stdout": "",\n  "stderr": "npm notice run test\\nnpm notice run node test.js\\nFAIL\\n"\n}';
+
+  s.run('user-prompt', {}, env);
+  s.run('post-tool', edit, env);
+  s.run('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test' }, error }, env);
+  const blocked = JSON.parse(s.run('stop', {}, env).out);
+  assert.equal(blocked.decision, 'block');
+  assert.ok(blocked.reason.includes('the last test run after that change failed'), blocked.reason);
+  assert.ok(blocked.reason.includes(`(through ${MCP})`), blocked.reason);
+});
+
 test('codex: listed MCP test tool decides stop without a rollout file', (t) => {
   const s = setupCodex(t);
   const MCP = 'mcp__uzak_sunucu__sunucu_komut_calistir';

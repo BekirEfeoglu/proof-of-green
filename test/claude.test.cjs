@@ -215,6 +215,39 @@ test('post-tool-failure for a listed MCP tool is a non-test failure', (t) => {
   assert.deepEqual([r.via, r.isTest, r.result], [MCP, false, 'fail']);
 });
 
+// Live Claude Code 2.1.316: a server that flags a failing command as an error fires
+// PostToolUseFailure with the exit code JSON in the error text.
+const liveError = (code) =>
+  `Error: {\n  "exit_code": ${code},\n  "duration_sec": 0.28,\n  "stdout": "",\n  "stderr": "npm notice run test\\nnpm notice run node test.js\\nFAIL\\n"\n}`;
+
+test('post-tool-failure with a readable exit code in the error is a failing test run', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test' }, error: liveError(1) });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.via, r.isTest, r.result], [MCP, true, 'fail']);
+});
+
+test('post-tool-failure reads the exit code from tool_response when error is absent', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: liveError(1).slice(7) });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.isTest, r.result], [true, 'fail']);
+});
+
+test('post-tool-failure with an unreadable error means no test ran', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test' }, error: 'MCP error -32000: Errno 22 Invalid argument' });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.isTest, r.result], [false, 'fail']);
+});
+
+test('post-tool-failure for a masked command is not a test', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('post-tool-failure', { tool_name: MCP, tool_input: { komut: 'npm test || true' }, error: liveError(1) });
+  const [r] = s.ledger().records;
+  assert.deepEqual([r.isTest, r.result], [false, 'fail']);
+});
+
 test('unlisted MCP tool is never recorded', (t) => {
   const s = setup(t, mcpConfig);
   s.send('post-tool', { tool_name: 'mcp__x__y', tool_input: { komut: 'npm test' }, tool_response: mcpResponse(0) });

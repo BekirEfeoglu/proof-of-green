@@ -24,13 +24,20 @@ function recordTool(ledger, payload, cwd, config, result) {
   if (listed) {
     const command = input[listed.commandArg];
     if (typeof command !== 'string') return false;
-    const failed = result === 'fail';
+    if (result === 'fail') {
+      // A server may report a failing command as an error. A readable exit code means the
+      // command ran; an unreadable error (server unreachable) means no test ran.
+      const response = typeof payload.error === 'string' ? payload.error : payload.tool_response;
+      const ran = readToolExitCode(response, listed.exitCodeField) === 'fail';
+      push(ledger, { kind: 'command', command, via: tool, isTest: ran && isTestCommand(command, config.testPatterns), result: 'fail' });
+      return true;
+    }
     push(ledger, {
       kind: 'command',
       command,
       via: tool,
-      isTest: !failed && isTestCommand(command, config.testPatterns),
-      result: failed ? 'fail' : readToolExitCode(payload.tool_response, listed.exitCodeField),
+      isTest: isTestCommand(command, config.testPatterns),
+      result: readToolExitCode(payload.tool_response, listed.exitCodeField),
     });
     return true;
   }
