@@ -83,6 +83,30 @@ test('exact copy for missing and failed, with suggested command', () => {
   );
 });
 
+test('suggested command names the MCP tool it ran through', () => {
+  const opts = { ...ON, suggestedCommand: 'npm test', suggestedVia: 'mcp__uzak_sunucu__sunucu_komut_calistir' };
+  const tail = ' Suggested command: `npm test` (through mcp__uzak_sunucu__sunucu_komut_calistir). If this project has no tests, or the user asked you not to run them, say so plainly and finish.';
+  assert.equal(
+    decide([edit(1, 'a.js')], opts).reason,
+    'proof-of-green: you changed code (a.js) but no test command ran after the last change. Run the tests and report the result.' + tail,
+  );
+  assert.equal(
+    decide([edit(1, 'a.js'), failTest(2)], opts).reason,
+    'proof-of-green: you changed code (a.js) and the last test run after that change failed. Fix the failures and run the tests again, or report the failing tests to the user.' + tail,
+  );
+});
+
+test('an empty suggestedVia keeps the plain suggestion copy', () => {
+  const r = decide([edit(1)], { ...ON, suggestedCommand: 'npm test', suggestedVia: '' });
+  assert.match(r.reason, /Suggested command: `npm test`\. If this project/);
+  assert.doesNotMatch(r.reason, /through/);
+});
+
+test('suggestedVia is ignored when there is no suggested command', () => {
+  const r = decide([edit(1)], { ...ON, suggestedVia: 'mcp__uzak_sunucu__sunucu_komut_calistir' });
+  assert.doesNotMatch(r.reason, /Suggested command|mcp__/);
+});
+
 test('without suggested command the sentence is omitted but the escape hatch stays', () => {
   const r = decide([edit(1)], ON);
   assert.doesNotMatch(r.reason, /Suggested command/);

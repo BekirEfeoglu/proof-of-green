@@ -9,7 +9,9 @@ function guardedSuggest(root) {
 function latestTestCommand(ledger) {
   for (let i = ledger.records.length - 1; i >= 0; i--) {
     const r = ledger.records[i];
-    if (r && r.kind === 'command' && r.isTest === true && typeof r.command === 'string') return r.command;
+    if (r && r.kind === 'command' && r.isTest === true && typeof r.command === 'string') {
+      return { command: r.command, via: typeof r.via === 'string' && r.via ? r.via : undefined };
+    }
   }
   return null;
 }
@@ -20,10 +22,12 @@ function push(ledger, record) {
 }
 
 function stopResponse(records, ledger, config, payload) {
+  const latest = latestTestCommand(ledger);
   const result = decide(records, {
     enabled: config.enabled,
     stopHookActive: payload.stop_hook_active === true,
-    suggestedCommand: latestTestCommand(ledger) || guardedSuggest(config.root),
+    suggestedCommand: latest ? latest.command : guardedSuggest(config.root),
+    suggestedVia: latest ? latest.via : undefined,
   });
   if (result.action === 'block') return { decision: 'block', reason: result.reason };
   if (result.systemMessage) return { systemMessage: result.systemMessage };

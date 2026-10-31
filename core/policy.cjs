@@ -37,8 +37,9 @@ function decide(records, opts) {
   const head = last
     ? `proof-of-green: you changed code (${files}) and the last test run after that change failed. Fix the failures and run the tests again, or report the failing tests to the user.`
     : `proof-of-green: you changed code (${files}) but no test command ran after the last change. Run the tests and report the result.`;
+  const via = typeof o.suggestedVia === 'string' && o.suggestedVia ? ` (through ${o.suggestedVia})` : '';
   const suggest = typeof o.suggestedCommand === 'string' && o.suggestedCommand
-    ? ` Suggested command: \`${o.suggestedCommand}\`.`
+    ? ` Suggested command: \`${o.suggestedCommand}\`${via}.`
     : '';
   return { action: 'block', reason: head + suggest + ESCAPE };
 }

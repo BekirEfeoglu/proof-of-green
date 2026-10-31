@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { handleClaude } = require('../adapters/claude.cjs');
 const { readLedger } = require('../core/ledger.cjs');
+const { stopResponse } = require('../adapters/common.cjs');
 
 function setup(t, extraConfig = {}) {
   const base = fs.mkdtempSync(path.join(os.homedir(), '.pog-claude-'));
@@ -153,6 +154,28 @@ test('a background shell run never counts as a test', (t) => {
   s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } });
   s.send('post-tool', { tool_name: 'PowerShell', tool_input: { command: 'npm test', run_in_background: true } });
   assert.deepEqual(s.ledger().records.map((r) => r.isTest), [false, false]);
+});
+
+test('stop names the MCP tool that ran the latest test command', () => {
+  const project = path.join(os.tmpdir(), 'pog-via-project');
+  const records = [
+    { seq: 1, turn: '1', kind: 'edit', path: path.join(project, 'src', 'a.ts') },
+    { seq: 2, turn: '1', kind: 'command', command: 'npm test', isTest: true, result: 'fail', via: 'mcp__uzak_sunucu__sunucu_komut_calistir' },
+  ];
+  const out = stopResponse(records, { turn: '1', nextSeq: 3, records }, { enabled: true, root: project }, {});
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /Suggested command: `npm test` \(through mcp__uzak_sunucu__sunucu_komut_calistir\)\./);
+});
+
+test('stop keeps the plain suggestion when the latest test ran without an MCP tool', () => {
+  const project = path.join(os.tmpdir(), 'pog-via-project');
+  const records = [
+    { seq: 1, turn: '1', kind: 'edit', path: path.join(project, 'src', 'a.ts') },
+    { seq: 2, turn: '1', kind: 'command', command: 'npm test', isTest: true, result: 'fail' },
+  ];
+  const out = stopResponse(records, { turn: '1', nextSeq: 3, records }, { enabled: true, root: project }, {});
+  assert.match(out.reason, /Suggested command: `npm test`\. If this project/);
+  assert.doesNotMatch(out.reason, /through/);
 });
 
 test('NotebookEdit on a .ipynb records an edit', (t) => {
