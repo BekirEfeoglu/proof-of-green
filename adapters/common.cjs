@@ -28,7 +28,7 @@ function stopDecision(records, ledger, config, stopHookActive) {
 }
 
 const runningNote = (agent) =>
-  `proof-of-green: subagent ${agent} is still running; its changes will be checked when it stops.`;
+  `proof-of-green: subagent ${agent} has not reported a stop yet; its changes will be checked when it stops.`;
 
 // The parent's current turn without the records of subagents that have not stopped yet: they
 // are judged at their own SubagentStop. A running subagent with an edit yields a note.

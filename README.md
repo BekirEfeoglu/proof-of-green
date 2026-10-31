@@ -163,7 +163,7 @@ Only files that pass the code-file rules count, including your `include` and `ex
 
 Claude Code only. Each subagent is checked when it stops, using only the edits and test runs it made itself. A subagent that changed code without a passing test afterwards is blocked once, and the suggested command is the last test command it ran.
 
-The main session's stop still looks at every edit in the turn, so changes a subagent left untested also block the main session. A background subagent may still be running when the main session stops; its changes are checked when it stops, and until then the main session gets a note that it is still running.
+The main session's stop still looks at every edit in the turn, so changes a subagent left untested also block the main session. A background subagent may still be running when the main session stops; its changes are checked when it stops, and until then the main session gets a note that it has not reported a stop yet.
 
 ## Troubleshooting
 
@@ -195,6 +195,7 @@ Codex: remove the two proof-of-green entries from `~/.codex/hooks.json`, then de
 - Codex does not put exit codes in its hook payloads. The gate reads them from Codex's session log, whose format is undocumented and may change. If it can't be read, the stop is allowed with a note.
 - Codex hooks are experimental, and Codex skips untrusted hooks without a warning. Run `doctor` after installing.
 - Codex subagents are not checked separately.
+- A Claude Code subagent that ends without a `SubagentStop` event (for example, one that was killed) is left out of the main session's check for that turn, and its edits are not checked at all.
 - The gate checks that a test command passed, not that it tests the code you changed. A narrow test that exits 0 satisfies it.
 - When tests run on another machine, the gate can't tell whether that copy of the code is current.
 - Every MCP tool call starts the gate briefly, even for tools you didn't list, which adds a little latency.

@@ -524,7 +524,7 @@ test('status leaves out a running subagent and adds the note; a stopped one coun
   let r = JSON.parse(out[0]);
   assert.deepEqual(r.edits, []);
   assert.equal(r.decision.action, 'allow');
-  assert.equal(r.decision.systemMessage, 'proof-of-green: subagent A1 is still running; its changes will be checked when it stops.');
+  assert.equal(r.decision.systemMessage, 'proof-of-green: subagent A1 has not reported a stop yet; its changes will be checked when it stops.');
   write([...lines, { kind: 'agent-stop', agent: 'A1' }]);
   out = [];
   run(['status', '--json'], statusIo(homeDir, out));

@@ -418,7 +418,7 @@ test('parent stop still blocks on an untested edit of a stopped subagent', (t) =
   assert.doesNotMatch(out.reason, /still running/);
 });
 
-const runningNote = (id) => `proof-of-green: subagent ${id} is still running; its changes will be checked when it stops.`;
+const runningNote = (id) => `proof-of-green: subagent ${id} has not reported a stop yet; its changes will be checked when it stops.`;
 
 test('subagent-stop records an agent-stop line whether it blocks or allows', (t) => {
   const s = setup(t);
