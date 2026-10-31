@@ -3,6 +3,7 @@ const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { readLedger, writeLedger, currentTurnRecords } = require('../core/ledger.cjs');
+const { readToolExitCode } = require('../core/toolresult.cjs');
 const { push, stopResponse } = require('./common.cjs');
 const { readCommandResults } = require('./rollout.cjs');
 
@@ -54,6 +55,19 @@ function recordTool(ledger, payload, cwd, config) {
     }
     return added;
   }
+  const listed = Array.isArray(config.testTools) ? config.testTools.find((t) => t.tool === payload.tool_name) : undefined;
+  if (listed) {
+    const command = input[listed.commandArg];
+    if (typeof command !== 'string') return false;
+    push(ledger, {
+      kind: 'command',
+      command,
+      via: payload.tool_name,
+      isTest: isTestCommand(command, config.testPatterns),
+      result: readToolExitCode(payload.tool_response, listed.exitCodeField),
+    });
+    return true;
+  }
   if (payload.tool_name === 'Bash') {
     const command = commandText(input.command);
     if (!command) return false;
@@ -74,7 +88,8 @@ function textMatches(record, result) {
 // from the rollout. allRecords (every turn) guards against taking another call's result.
 function resolveResults(records, results, allRecords, turn) {
   const out = records.map((r) => ({ ...r }));
-  const pending = out.filter((r) => r.kind === 'command' && r.result === 'unknown' && typeof r.command === 'string');
+  // Records with `via` were resolved from their MCP response; never pair them with shell results.
+  const pending = out.filter((r) => r.kind === 'command' && r.result === 'unknown' && typeof r.command === 'string' && r.via === undefined);
   const used = new Set();
   const matched = new Map();
   for (const r of pending) {

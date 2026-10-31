@@ -22,6 +22,7 @@ test('install into an empty home copies the app and creates hooks.json', (t) => 
   const r = installCodex(opts(homeDir));
   assert.equal(r.hooksFile, path.join(homeDir, '.codex', 'hooks.json'));
   assert.deepEqual(r.added, ['PostToolUse', 'Stop']);
+  assert.deepEqual(r.updated, []);
   for (const rel of ['gate.cjs', 'core/ledger.cjs', 'adapters/codex.cjs']) {
     assert.ok(fs.existsSync(path.join(r.appDir, rel)), rel);
   }
@@ -29,7 +30,7 @@ test('install into an empty home copies the app and creates hooks.json', (t) => 
   const appDir = r.appDir.replace(/\\/g, '/');
   assert.deepEqual(commands(hooks, 'Stop'), [`node "${appDir}/gate.cjs" codex stop`]);
   assert.deepEqual(commands(hooks, 'PostToolUse'), [`node "${appDir}/gate.cjs" codex post-tool`]);
-  assert.equal(hooks.hooks.PostToolUse[0].matcher, 'apply_patch|Bash');
+  assert.equal(hooks.hooks.PostToolUse[0].matcher, 'apply_patch|Bash|mcp__.*');
   assert.equal(hooks.hooks.Stop[0].hooks[0].timeout, 10);
   assert.equal(hooks.hooks.Stop[0].hooks[0].type, 'command');
 });
@@ -166,4 +167,40 @@ test('doctor finds the Claude plugin ledger dir and its errors without CLAUDE_PL
   const r = doctor(opts(homeDir));
   assert.ok(r.ledgerDirs.includes(dir), r.ledgerDirs.join(', '));
   assert.deepEqual(r.lastErrors, ['2026-10-31T00:00:00.000Z Error: boom']);
+});
+
+test('a v0.1 install gets the new PostToolUse matcher in place; a second install changes nothing', (t) => {
+  const homeDir = tempHome(t);
+  const { appDir } = installCodex(opts(homeDir));
+  const file = path.join(homeDir, '.codex', 'hooks.json');
+  const v01 = readHooks(homeDir);
+  v01.hooks.PostToolUse[0].matcher = 'apply_patch|Bash';
+  fs.writeFileSync(file, JSON.stringify(v01, null, 2) + '\n');
+
+  const r = installCodex(opts(homeDir));
+  assert.deepEqual([r.added, r.updated], [[], ['PostToolUse']]);
+  const hooks = readHooks(homeDir);
+  assert.equal(hooks.hooks.PostToolUse.length, 1);
+  assert.equal(hooks.hooks.PostToolUse[0].matcher, 'apply_patch|Bash|mcp__.*');
+  assert.deepEqual(commands(hooks, 'PostToolUse'), [`node "${appDir.replace(/\\/g, '/')}/gate.cjs" codex post-tool`]);
+  assert.equal(hooks.hooks.Stop.length, 1);
+
+  const after = fs.readFileSync(file, 'utf8');
+  const again = installCodex(opts(homeDir));
+  assert.deepEqual([again.added, again.updated], [[], []]);
+  assert.equal(fs.readFileSync(file, 'utf8'), after);
+});
+
+test('run install codex prints Updated for a v0.1 install', (t) => {
+  const homeDir = tempHome(t);
+  installCodex(opts(homeDir));
+  const file = path.join(homeDir, '.codex', 'hooks.json');
+  const v01 = readHooks(homeDir);
+  v01.hooks.PostToolUse[0].matcher = 'apply_patch|Bash';
+  fs.writeFileSync(file, JSON.stringify(v01));
+  const out = [];
+  const io = { out: (s) => out.push(s), err: () => {}, env: {}, homeDir, platform: process.platform, cwd: homeDir };
+  assert.equal(run(['install', 'codex'], io), 0);
+  assert.match(out.join('\n'), /^Updated: PostToolUse$/m);
+  assert.doesNotMatch(out.join('\n'), /already installed/);
 });

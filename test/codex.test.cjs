@@ -244,3 +244,55 @@ test('shell wrappers are unwrapped before detection, for argv arrays and strings
   ]);
   assert.equal(records[0].command, 'bash -lc npm test');
 });
+
+const MCP = 'mcp__uzak__run';
+const listed = { testTools: [{ tool: MCP, commandArg: 'komut', exitCodeField: 'exit_code' }] };
+const mcp = (response, komut = 'npm test', tool = MCP) => ({ tool_name: tool, tool_input: { komut }, tool_response: response });
+const mcpText = (code) => JSON.stringify({ exit_code: code, stdout: '' });
+
+test('a listed MCP tool records pass, fail and unknown from its response text', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', mcp(mcpText(0)));
+  s.send('post-tool', mcp(mcpText(1)));
+  s.send('post-tool', mcp('not json'));
+  s.send('post-tool', mcp(mcpText(0), 'echo hi'));
+  s.send('post-tool', mcp(mcpText(0), 42));
+  s.send('post-tool', mcp(mcpText(0), 'npm test', 'mcp__other__run'));
+  assert.deepEqual(s.ledger().records.map(({ kind, command, via, isTest, result }) => ({ kind, command, via, isTest, result })), [
+    { kind: 'command', command: 'npm test', via: MCP, isTest: true, result: 'pass' },
+    { kind: 'command', command: 'npm test', via: MCP, isTest: true, result: 'fail' },
+    { kind: 'command', command: 'npm test', via: MCP, isTest: true, result: 'unknown' },
+    { kind: 'command', command: 'echo hi', via: MCP, isTest: false, result: 'pass' },
+  ]);
+});
+
+test('a listed MCP run decides stop without any rollout file', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', mcp(mcpText(1)));
+  const out = s.send('stop', { transcript_path: null });
+  assert.equal(out.decision, 'block');
+  assert.ok(out.reason.includes(`(through ${MCP})`), out.reason);
+  s.send('post-tool', mcp(mcpText(0)));
+  assert.deepEqual(s.send('stop', { transcript_path: null }), {});
+});
+
+test('a failed MCP run is never overridden by a passing shell run in the rollout', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', bash('npm test', 'call-1'));
+  s.send('post-tool', mcp(mcpText(1)));
+  const file = s.rollout([{ call_id: 'call-1', command: 'npm test', exit_code: 0 }]);
+  assert.equal(s.send('stop', { transcript_path: file }).decision, 'block');
+  assert.equal(s.ledger().records.at(-1).result, 'fail');
+});
+
+test('an unknown MCP result never takes a shell result from the rollout by text', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', mcp('not json'));
+  const file = s.rollout([{ command: 'npm test', exit_code: 0 }]);
+  const out = s.send('stop', { transcript_path: file });
+  assert.equal(out.decision, undefined);
+  assert.match(out.systemMessage, /could not be verified/);
+});

@@ -54,26 +54,33 @@ function installCodex({ homeDir = os.homedir(), env = process.env, platform = pr
 
   const base = `node "${toSlash(appDir)}/gate.cjs" codex`;
   const wanted = [
-    { event: 'PostToolUse', matcher: 'apply_patch|Bash', command: `${base} post-tool` },
+    { event: 'PostToolUse', matcher: 'apply_patch|Bash|mcp__.*', command: `${base} post-tool` },
     { event: 'Stop', command: `${base} stop` },
   ];
   const added = [];
+  const updated = [];
   for (const { event, matcher, command } of wanted) {
     const groups = Array.isArray(data.hooks[event]) ? data.hooks[event] : [];
-    const present = groups.some(
+    const ours = groups.filter(
       (g) => g && Array.isArray(g.hooks) && g.hooks.some((h) => h && h.command === command),
     );
-    if (present) continue;
+    if (ours.length) {
+      // An older install (v0.1 matcher `apply_patch|Bash`) gets the new matcher in place.
+      const stale = matcher ? ours.filter((g) => g.matcher !== matcher) : [];
+      for (const g of stale) g.matcher = matcher;
+      if (stale.length) updated.push(event);
+      continue;
+    }
     const group = { hooks: [{ type: 'command', command, timeout: 10 }] };
     if (matcher) group.matcher = matcher;
     data.hooks[event] = [...groups, group];
     added.push(event);
   }
-  if (added.length) {
+  if (added.length || updated.length) {
     fs.mkdirSync(path.dirname(hooksFile), { recursive: true });
     fs.writeFileSync(hooksFile, JSON.stringify(data, null, 2) + '\n');
   }
-  return { appDir, hooksFile, added };
+  return { appDir, hooksFile, added, updated };
 }
 
 function codexTrusted(configFile, hooksFile) {
@@ -180,7 +187,9 @@ function run(argv, io) {
     if (cmd === 'install' && arg === 'codex') {
       const r = installCodex(ctx);
       io.out(`Hooks file: ${r.hooksFile}`);
-      io.out(r.added.length ? `Added: ${r.added.join(', ')}` : 'Codex hooks already installed.');
+      if (r.added.length) io.out(`Added: ${r.added.join(', ')}`);
+      if (r.updated.length) io.out(`Updated: ${r.updated.join(', ')}`);
+      if (!r.added.length && !r.updated.length) io.out('Codex hooks already installed.');
       io.out(TRUST_NOTE);
       return 0;
     }

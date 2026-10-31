@@ -8,18 +8,26 @@ const path = require('node:path');
 
 const GATE = path.join(__dirname, '..', 'gate.cjs');
 
+// Every gate run gets an empty home so the developer's real ~/.proof-of-green.json never applies.
+function emptyHome(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pog-e2e-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  return { HOME: home, USERPROFILE: home };
+}
+
 function setup(t) {
   const base = fs.mkdtempSync(path.join(os.homedir(), '.pog-e2e-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const project = path.join(base, 'proj');
   fs.mkdirSync(path.join(project, '.git'), { recursive: true });
   const data = path.join(base, 'data');
+  const home = emptyHome(t);
   const run = (event, payload, extraEnv = {}, rawInput) => {
     const input = rawInput !== undefined ? rawInput : JSON.stringify({ session_id: 'e2e', cwd: project, ...payload });
     const r = spawnSync(process.execPath, [GATE, 'claude', event], {
       input,
       encoding: 'utf8',
-      env: { ...process.env, CLAUDE_PLUGIN_DATA: data, ...extraEnv },
+      env: { ...process.env, ...home, CLAUDE_PLUGIN_DATA: data, ...extraEnv },
     });
     return { status: r.status, out: r.stdout.trim() };
   };
@@ -73,7 +81,7 @@ test('empty stdin, invalid JSON, and missing session_id each give {} with exit 0
 
 test('unknown agent and unknown event give {}', (t) => {
   const s = setup(t);
-  const r = spawnSync(process.execPath, [GATE, 'nobody', 'stop'], { input: '{}', encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [GATE, 'nobody', 'stop'], { input: '{}', encoding: 'utf8', env: { ...process.env, ...emptyHome(t) } });
   assert.deepEqual([r.status, r.stdout.trim()], [0, '{}']);
   assert.equal(s.run('bogus', {}).out, '{}');
 });
@@ -99,11 +107,12 @@ function setupCodex(t) {
   const project = path.join(base, 'proj');
   fs.mkdirSync(path.join(project, '.git'), { recursive: true });
   const state = path.join(base, 'state');
+  const home = emptyHome(t);
   const run = (event, payload, extraEnv = {}) => {
     const r = spawnSync(process.execPath, [GATE, 'codex', event], {
       input: JSON.stringify({ session_id: 'e2e-codex', cwd: project, turn_id: 'turn-1', ...payload }),
       encoding: 'utf8',
-      env: { ...process.env, LOCALAPPDATA: state, XDG_STATE_HOME: state, ...extraEnv },
+      env: { ...process.env, ...home, LOCALAPPDATA: state, XDG_STATE_HOME: state, ...extraEnv },
     });
     return { status: r.status, out: r.stdout.trim() };
   };
@@ -115,7 +124,7 @@ function setupCodex(t) {
     }) + '\n');
     return file;
   };
-  return { run, rollout, state };
+  return { run, rollout, state, home };
 }
 
 const codexPatch = { tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Update File: src/a.ts\n*** End Patch' } };
@@ -182,4 +191,20 @@ test('listed MCP test tool: edit, failing run blocks naming the tool, passing ru
   s.run('post-tool', edit, env);
   s.run('post-tool', mcp(0), env);
   assert.equal(s.run('stop', {}, env).out, '{}');
+});
+
+test('codex: listed MCP test tool decides stop without a rollout file', (t) => {
+  const s = setupCodex(t);
+  const MCP = 'mcp__uzak_sunucu__sunucu_komut_calistir';
+  fs.writeFileSync(path.join(s.home.HOME, '.proof-of-green.json'), JSON.stringify({ testTools: [{ tool: MCP, commandArg: 'komut' }] }));
+  const mcp = (code) => ({ tool_name: MCP, tool_input: { komut: 'npm test' }, tool_response: JSON.stringify({ exit_code: code, stdout: '' }) });
+
+  s.run('post-tool', codexPatch);
+  s.run('post-tool', mcp(1));
+  const blocked = JSON.parse(s.run('stop', { transcript_path: null }).out);
+  assert.equal(blocked.decision, 'block');
+  assert.ok(blocked.reason.includes(`(through ${MCP})`), blocked.reason);
+
+  s.run('post-tool', mcp(0));
+  assert.equal(s.run('stop', { transcript_path: null }).out, '{}');
 });
