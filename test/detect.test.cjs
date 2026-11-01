@@ -207,3 +207,19 @@ test('long monorepo runner commands are classified quickly', () => {
     assert.ok(Date.now() - start < 500, `${s.slice(0, 20)}... took ${Date.now() - start} ms`);
   }
 });
+
+test('test commands of more languages and build tools count', () => {
+  const runners = ['python manage.py test', 'python3 manage.py test app.tests', 'py backend/manage.py test',
+    'bazel test //...', 'bazelisk test //pkg:all', 'bazel --output_base=/tmp/b test //x', 'xcodebuild test -scheme App',
+    'xcodebuild -scheme App -destination "platform=iOS Simulator" test', 'xcodebuild test-without-building -scheme App',
+    'rake spec', 'bundle exec rake spec', 'gotestsum', 'gotestsum --format testname -- ./...', 'stack test', 'cabal test',
+    'dune test', 'dune runtest', 'meson test -C build', 'ninja test', 'ninja -C build test', 'lein test', 'clojure -X:test',
+    'clj -M:test', 'nimble test', 'busted', 'R CMD check pkg.tar.gz', 'uvx --with pytest-cov pytest', 'rye test',
+    'conda run -n env pytest', 'pixi run pytest'];
+  for (const c of runners) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['python manage.py migrate', 'bazel build //...', 'xcodebuild -scheme App build', 'rake db:seed',
+    'stack build', 'cabal build', 'dune build', 'meson setup build', 'ninja -C build', 'lein run', 'clojure -M:dev',
+    'hatch run lint', 'hatch run dev:test', 'pdm run test', 'uv run test', 'conda run -n env python app.py']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+});

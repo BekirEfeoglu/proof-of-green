@@ -54,7 +54,7 @@ const BUILTIN_TEST_PATTERNS = [
   /^(?:bundle\s+exec\s+)?(?:rspec|phpunit)\b/,
   /^(?:\.[\\/])?vendor[\\/]bin[\\/](?:phpunit|pest)\b/,
   /^pest(?:\s|$)/,
-  /^(?:bundle\s+exec\s+)?(?:rake|(?:bin[\\/])?rails)\s+test\b/,
+  /^(?:bundle\s+exec\s+)?(?:rake\s+(?:test|spec)|(?:bin[\\/])?rails\s+test)\b/,
   /^mix\s+test\b/,
   /^(?:swift|flutter|dart|sbt|just)\s+test\b/,
   /^zig\s+build\s+test\b/,
@@ -62,14 +62,25 @@ const BUILTIN_TEST_PATTERNS = [
   /^php\s+artisan\s+test\b/,
   /^composer\s+(?:run(?:-script)?\s+)?test\b/,
   /^(?:tox|nox)(?:\s|$)/,
-  /^uvx\s+pytest\b/,
-  /^hatch\s+test\b/,
+  /^uvx(?:\s+--(?:with|from|python)\s+\S+)*\s+pytest\b/,
+  /^(?:hatch|rye)\s+test\b/,
+  /^(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+(?:\S*[\\/])?manage\.py\s+test\b/,
+  /^(?:bazel|bazelisk)(?:\s+--\S+)*\s+test\b/,
+  /^xcodebuild\b.*\s(?:test|test-without-building)(?=\s|$)/,
+  /^gotestsum(?:\s|$)/,
+  /^(?:stack|cabal|lein|nimble|meson)\s+test\b/,
+  /^dune\s+(?:test|runtest)\b/,
+  /^ninja(?:\s+-C\s+\S+)?\s+test\b/,
+  /^(?:clojure|clj)\s+-[XM]:test\b/,
+  /^busted(?:\s|$)/,
+  /^R\s+CMD\s+check\b/,
 ];
 
 const stripQuotes = (s) => s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
 const stripEnv = (s) => s.replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, '');
 // Python project runners wrap the real command: `uv run pytest` is checked as `pytest`.
-const stripRunner = (s) => s.replace(/^(?:uv|poetry|pipenv|hatch|pdm)\s+run\s+/, '');
+const stripRunner = (s) => s.replace(
+  /^(?:(?:uv|poetry|pipenv|hatch|pdm|pixi)\s+run|conda\s+run(?:\s+(?:-n|--name|-p|--prefix)\s+\S+)*)\s+/, '');
 
 // Separators: &&, ||, ;, newline, | and a lone & (not part of 2>&1 or &>).
 const SEPARATOR = /(&&|\|\||\r?\n|;|\||(?<![<>&])&(?![>&]))/;
