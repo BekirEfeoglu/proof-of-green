@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { shellEditPaths, shellEdits } = require('../core/shelledits.cjs');
+const { shellEditPaths, shellEdits, patchPaths } = require('../core/shelledits.cjs');
 
 const cases = (list) => {
   for (const [command, want] of list) assert.deepEqual(shellEditPaths(command), want, command);
@@ -145,4 +145,85 @@ test('PowerShell aliases and abbreviated parameters for copy and move', () => {
   assert.deepEqual(writes('cpi a.ts -Dest b.ts'), [{ path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
   assert.deepEqual(writes('mi -Pat a.ts -Destination lib/'), [{ path: 'a.ts' }, { path: 'lib/a.ts' }]);
   assert.deepEqual(writes('move a.ts b.ts'), [{ path: 'a.ts' }, { path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+});
+
+test('git checkout and git restore write the paths they name', () => {
+  cases([
+    ['git checkout -- src/a.js', ['src/a.js']],
+    ['git checkout HEAD~1 -- a.js b.ts', ['a.js', 'b.ts']],
+    ['git checkout main src/a.js', ['main', 'src/a.js']],
+    ['git checkout .', ['.']],
+    ['git restore src/a.js lib', ['src/a.js', 'lib']],
+    ['git restore --source=HEAD~2 a.py', ['a.py']],
+    ['git restore -s main --worktree a.py', ['a.py']],
+    ['git restore --staged --worktree a.py', ['a.py']],
+    ['git restore -SW a.py', ['a.py']],
+    ['git -C api checkout -- a.go', ['api/a.go']],
+    ['git -c core.autocrlf=false restore a.rs', ['a.rs']],
+    ['git.exe restore a.rs', ['a.rs']],
+  ]);
+});
+
+test('git commands that change only branches or the index are not edits', () => {
+  cases([
+    ['git checkout -b feature', []],
+    ['git checkout -B feature', []],
+    ['git checkout --orphan gh-pages', []],
+    ['git restore --staged a.py', []],
+    ['git restore -S a.py', []],
+    ['git switch main', []],
+    ['git status', []],
+    ['git checkout -- "$FILE"', []],
+    ['git log -- a.js', []],
+  ]);
+});
+
+test('git apply and patch report the patch they read', () => {
+  assert.deepEqual(writes('git apply fix.patch'), [{ patch: 'fix.patch', strip: 1, repoRoot: true }]);
+  assert.deepEqual(writes('git apply -p2 --3way a.diff b.diff'), [
+    { patch: 'a.diff', strip: 2, repoRoot: true }, { patch: 'b.diff', strip: 2, repoRoot: true }]);
+  assert.deepEqual(writes('git -C api apply x.patch'), [{ patch: 'api/x.patch', strip: 1, repoRoot: true, base: 'api' }]);
+  assert.deepEqual(writes('git apply < fix.patch'), [{ patch: 'fix.patch', strip: 1, repoRoot: true }]);
+  assert.deepEqual(writes('patch -p1 < fix.patch'), [{ patch: 'fix.patch', strip: 1 }]);
+  assert.deepEqual(writes('patch -p 0 -i fix.patch'), [{ patch: 'fix.patch', strip: 0 }]);
+  assert.deepEqual(writes('patch --strip=1 --input=fix.patch'), [{ patch: 'fix.patch', strip: 1 }]);
+  assert.deepEqual(writes('patch -d src -i fix.patch'), [{ patch: 'src/fix.patch', strip: Infinity, base: 'src' }]);
+  assert.deepEqual(writes('patch a.js fix.diff'), [{ path: 'a.js' }]);
+  assert.deepEqual(writes('patch -o out.js a.js < fix.diff'), [{ path: 'out.js' }]);
+});
+
+test('git apply and patch forms that write nothing', () => {
+  cases([
+    ['git apply --check fix.patch', []],
+    ['git apply --stat fix.patch', []],
+    ['git apply --cached fix.patch', []],
+    ['patch --dry-run -p1 < fix.patch', []],
+    ['git apply "$P"', []],
+  ]);
+  assert.deepEqual(writes('git apply --check --apply fix.patch'), [{ patch: 'fix.patch', strip: 1, repoRoot: true }]);
+});
+
+test('patchPaths lists the files a unified diff changes', () => {
+  const diff = [
+    'diff --git a/src/a.js b/src/a.js',
+    '--- a/src/a.js',
+    '+++ b/src/a.js',
+    '@@ -1 +1 @@',
+    '-x',
+    '+--- not/a/header.js',
+    'diff --git a/old.ts b/new.ts',
+    'similarity index 100%',
+    'rename from old.ts',
+    'rename to new.ts',
+    '--- /dev/null',
+    '+++ b/lib/new file.py\t2026-11-01 10:00:00',
+    '--- a/gone.rb',
+    '+++ /dev/null',
+  ].join('\n');
+  assert.deepEqual(patchPaths(diff, 1), ['src/a.js', 'old.ts', 'new.ts', 'lib/new file.py', 'gone.rb']);
+  assert.deepEqual(patchPaths('--- a/x/y.js\n+++ b/x/y.js\n', 2), ['y.js']);
+  assert.deepEqual(patchPaths('--- x/y.js\n+++ x/y.js\n', 0), ['x/y.js']);
+  assert.deepEqual(patchPaths('--- a/x/y.js\n+++ b/x/y.js\n', Infinity), ['y.js']);
+  assert.deepEqual(patchPaths('--- "a/q\\"x.js"\n+++ "b/q\\"x.js"\n', 1), ['q"x.js']);
+  assert.deepEqual(patchPaths('', 1), []);
 });

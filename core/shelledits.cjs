@@ -1,8 +1,9 @@
 'use strict';
 
 // Finds the files a shell command writes through the common forms: > and >> redirections,
-// tee, sed -i, perl -i and PowerShell's Set-Content, Add-Content and Out-File. Anything else
-// (scripts, node -e, cp, git checkout) is not seen. Paths that hold a variable are skipped.
+// tee, sed -i, perl -i, PowerShell's Set-Content, Add-Content and Out-File, cp and mv, git
+// checkout and restore with paths, and git apply or patch (as the patch file they read). Anything
+// else (scripts, node -e, git switch or pull) is not seen. Paths that hold a variable are skipped.
 
 const NULL_TARGETS = new Set(['/dev/null', 'nul', 'nul:']);
 const PS_WRITERS = new Set(['set-content', 'add-content', 'out-file']);
@@ -224,8 +225,124 @@ function psCopyMoveWrites(args, isMove) {
 const PS_COPY = new Set(['copy-item', 'cpi', 'copy']);
 const PS_MOVE = new Set(['move-item', 'mi', 'move']);
 
-// Returns { path, ifDir?, unlessExists? } for each file the command writes.
-function commandWrites(words) {
+const CHECKOUT_VALUES = new Set(['-b', '-B', '--orphan', '--pathspec-from-file']);
+
+// Without `--` a checkout operand may be a branch or a path; all are returned, and a branch name
+// matches no file. With `--` the operand before it is the commit.
+function checkoutPaths(args) {
+  let dashes = -1;
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].text;
+    if (dashes >= 0 || args[i].dynamic || !a.startsWith('-') || a === '-') operands.push(args[i]);
+    else if (a === '--') dashes = operands.length;
+    else if (CHECKOUT_VALUES.has(a)) i++;
+  }
+  return dashes >= 0 ? operands.slice(dashes) : operands;
+}
+
+// `git restore --staged` alone changes only the index.
+function restorePaths(args) {
+  let staged = false;
+  let worktree = false;
+  let done = false;
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].text;
+    if (done || args[i].dynamic || !a.startsWith('-') || a === '-') operands.push(args[i]);
+    else if (a === '--') done = true;
+    else if (a === '-s' || a === '--source' || a === '--pathspec-from-file') i++;
+    else if (a === '--staged') staged = true;
+    else if (a === '--worktree') worktree = true;
+    else if (/^-[A-Za-z]+$/.test(a) && a[1] !== 's') {
+      if (a.includes('S')) staged = true;
+      if (a.includes('W')) worktree = true;
+    }
+  }
+  return staged && !worktree ? [] : operands;
+}
+
+const APPLY_REPORTS = new Set(['--check', '--stat', '--numstat', '--summary']);
+
+// git apply reads its paths from the repository root; the caller finds that root.
+function applyPatches(args, stdin, at) {
+  let strip = 1;
+  let reportOnly = false;
+  let apply = false;
+  const patches = [];
+  for (const w of args) {
+    const a = w.text;
+    const p = /^-p(\d+)$/.exec(a);
+    if (w.dynamic || !a.startsWith('-')) patches.push({ ...w, text: at(a) });
+    else if (a === '--cached') return [];
+    else if (APPLY_REPORTS.has(a)) reportOnly = true;
+    else if (a === '--apply') apply = true;
+    else if (p) strip = Number(p[1]);
+  }
+  if (reportOnly && !apply) return [];
+  const read = patches.length ? patches : stdin ? [stdin] : [];
+  return read.filter((w) => !w.dynamic).map((w) => ({ patch: w.text, strip, repoRoot: true }));
+}
+
+function gitWrites(args, stdin) {
+  let base = '';
+  let i = 0;
+  for (; i < args.length && args[i].text.startsWith('-'); i++) {
+    const a = args[i].text;
+    if (a === '-C') {
+      const dir = args[++i];
+      if (!dir || dir.dynamic) return [];
+      base = base ? `${base}/${dir.text}` : dir.text;
+    } else if (a === '-c' || a === '--git-dir' || a === '--work-tree' || a === '--namespace') i++;
+  }
+  if (i >= args.length || args[i].dynamic) return [];
+  const at = (p) => (base ? `${base.replace(/[\\/]+$/, '')}/${p}` : p);
+  const sub = args[i].text;
+  const rest = args.slice(i + 1);
+  let paths = [];
+  if (sub === 'checkout') paths = checkoutPaths(rest);
+  else if (sub === 'restore') paths = restorePaths(rest);
+  else if (sub === 'apply') return applyPatches(rest, stdin, at).map((e) => (base ? { ...e, base } : e));
+  return paths.filter((w) => !w.dynamic).map((w) => ({ path: at(w.text) }));
+}
+
+const PATCH_VALUES = new Set(['-i', '--input', '-d', '--directory', '-o', '--output', '-p', '--strip', '-r',
+  '--reject-file', '-B', '--prefix', '-D', '--ifdef', '-F', '--fuzz', '-V', '--version-control', '-z', '--suffix',
+  '-Y', '--basename-prefix', '-g', '--get']);
+const PATCH_LONG = { '--input': '-i', '--directory': '-d', '--output': '-o', '--strip': '-p' };
+
+// `patch [file [patchfile]]`: a named file or -o output is the file written; otherwise the patch
+// (from -i, or stdin) names them. Without -p, patch uses each file's base name. -d moves first.
+function patchWrites(args, stdin) {
+  const opts = {};
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].text;
+    const long = /^(--[a-z-]+)=(.*)$/.exec(a);
+    const short = /^-([idop])(.+)$/.exec(a);
+    if (args[i].dynamic || !a.startsWith('-') || a === '-') operands.push(args[i]);
+    else if (a === '--dry-run') return [];
+    else if (long && PATCH_LONG[long[1]]) opts[PATCH_LONG[long[1]]] = { text: long[2], dynamic: false };
+    else if (short) opts[`-${short[1]}`] = { text: short[2], dynamic: false };
+    else if (PATCH_VALUES.has(a)) {
+      const v = args[++i];
+      if (v) opts[PATCH_LONG[a] || a] = v;
+    }
+  }
+  const base = opts['-d'];
+  if (base && base.dynamic) return [];
+  const at = (p) => (base ? `${base.text.replace(/[\\/]+$/, '')}/${p}` : p);
+  const written = opts['-o'] || operands[0];
+  if (written) return written.dynamic ? [] : [{ path: at(written.text) }];
+  const strip = opts['-p'] && /^\d+$/.test(opts['-p'].text) ? Number(opts['-p'].text) : Infinity;
+  const input = opts['-i'] ? { ...opts['-i'], text: at(opts['-i'].text) } : stdin;
+  if (!input || input.dynamic) return [];
+  return [{ patch: input.text, strip, ...(base ? { base: base.text } : {}) }];
+}
+
+// Returns { path, ifDir?, unlessExists? } for each file the command writes, or { patch, strip,
+// base?, repoRoot? } for a patch it applies. stdin is the word after <.
+function commandWrites(words, stdin) {
   const argv = words.slice();
   while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
   if (!argv.length || argv[0].dynamic) return [];
@@ -233,6 +350,8 @@ function commandWrites(words) {
   const args = argv.slice(1);
   if (name === 'cp' || name === 'mv') return copyMoveWrites(args, name === 'mv');
   if (PS_COPY.has(name) || PS_MOVE.has(name)) return psCopyMoveWrites(args, PS_MOVE.has(name));
+  if (name === 'git') return gitWrites(args, stdin);
+  if (name === 'patch') return patchWrites(args, stdin);
   let files = [];
   if (name === 'tee') files = args.filter((a) => !a.text.startsWith('-'));
   else if (name === 'sed') files = sedFiles(args);
@@ -249,20 +368,19 @@ function shellEdits(command) {
   const tokens = tokenize(command);
   const edits = [];
   let pending = [];
-  const push = (w) => { if (w.path && !NULL_TARGETS.has(w.path.toLowerCase())) pending.push(w); };
+  const push = (w) => { if (w.patch || (w.path && !NULL_TARGETS.has(w.path.toLowerCase()))) pending.push(w); };
   let words = [];
+  let stdin = null;
   const end = (at) => {
-    for (const w of commandWrites(words)) push(w);
+    for (const w of commandWrites(words, stdin)) push(w);
     for (const w of pending) {
-      const old = edits.findIndex((e) => e.path === w.path);
+      const old = w.path === undefined ? -1 : edits.findIndex((e) => e.path === w.path);
       if (old >= 0) edits.splice(old, 1);
-      const e = { path: w.path, end: at };
-      if (w.ifDir !== undefined) e.ifDir = w.ifDir;
-      if (w.unlessExists !== undefined) e.unlessExists = w.unlessExists;
-      edits.push(e);
+      edits.push({ ...w, end: at });
     }
     words = [];
     pending = [];
+    stdin = null;
   };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -273,8 +391,8 @@ function shellEdits(command) {
         if (!target.dynamic) push({ path: target.text });
       }
     } else if (t.op === '<') {
-      // The file read by < is not an argument of the command.
-      if (tokens[i + 1] && !tokens[i + 1].op) i++;
+      // The file read by < is not an argument of the command; patch and git apply read it as the diff.
+      if (tokens[i + 1] && !tokens[i + 1].op) stdin = tokens[++i];
     } else if (t.op) end(t.at);
     else words.push(t);
   }
@@ -282,11 +400,52 @@ function shellEdits(command) {
   return edits;
 }
 
-// The distinct paths a command writes, in order of first write.
+// The distinct paths a command writes, in order of first write. Patches are left out: their files
+// are known only from the patch.
 function shellEditPaths(command) {
   const paths = [];
-  for (const e of shellEdits(command)) if (!paths.includes(e.path)) paths.push(e.path);
+  for (const e of shellEdits(command)) if (e.path !== undefined && !paths.includes(e.path)) paths.push(e.path);
   return paths;
 }
 
-module.exports = { shellEdits, shellEditPaths };
+// git quotes a path with special characters as a C string; \ooo escapes are UTF-8 bytes.
+function unquote(s) {
+  if (!s.startsWith('"')) return s;
+  const bytes = [];
+  for (let i = 1; i < s.length && s[i] !== '"'; i++) {
+    if (s[i] !== '\\') { bytes.push(...Buffer.from(s[i])); continue; }
+    const oct = /^[0-7]{3}/.exec(s.slice(i + 1));
+    if (oct) { bytes.push(parseInt(oct[0], 8)); i += 3; continue; }
+    const c = s[++i] || '';
+    bytes.push(...Buffer.from({ n: '\n', t: '\t' }[c] || c));
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+// The files a unified or git diff changes, from its ---/+++ header pairs (not /dev/null) with
+// `strip` leading parts removed (Infinity keeps the base name), and git's rename and copy lines.
+// A --- line counts only when a +++ line follows, so a removed line that starts with -- is not a header.
+function patchPaths(text, strip) {
+  const out = [];
+  const add = (p) => { if (p && !out.includes(p)) out.push(p); };
+  const header = (line) => {
+    const p = unquote(line.slice(4).replace(/\t.*$/, ''));
+    if (p === '/dev/null') return null;
+    const parts = p.split('/').filter(Boolean);
+    if (strip === Infinity) return parts[parts.length - 1] || null;
+    return parts.length > strip ? parts.slice(strip).join('/') : null;
+  };
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const git = /^(?:rename|copy) (?:from|to) (.+)$/.exec(line);
+    if (git) add(unquote(git[1]));
+    else if (line.startsWith('--- ') && (lines[i + 1] || '').startsWith('+++ ')) {
+      add(header(line));
+      add(header(lines[++i]));
+    }
+  }
+  return out;
+}
+
+module.exports = { shellEdits, shellEditPaths, patchPaths };

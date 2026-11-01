@@ -602,3 +602,41 @@ test('a copied directory tree is walked with a bound and skips node_modules', (t
   assert.equal(edits.length, 50);
   assert.ok(edits.every((p) => !p.includes('node_modules')));
 });
+
+test('git checkout and git restore of a code file record it', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'git checkout HEAD~1 -- src/a.js && git restore lib/b.ts' } });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
+  assert.deepEqual(edits, [path.join(s.project, 'src', 'a.js'), path.join(s.project, 'lib', 'b.ts')]);
+  assert.equal(s.send('stop', {}).decision, 'block');
+});
+
+test('git apply records the code files named in the patch, from the repository root', (t) => {
+  const s = setup(t);
+  const sub = path.join(s.project, 'pkg');
+  fs.mkdirSync(sub);
+  fs.writeFileSync(path.join(sub, 'fix.patch'),
+    'diff --git a/pkg/a.js b/pkg/a.js\n--- a/pkg/a.js\n+++ b/pkg/a.js\n@@ -1 +1 @@\n-x\n+y\n--- a/README.md\n+++ b/README.md\n');
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'git apply fix.patch' }, cwd: sub });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
+  assert.deepEqual(edits, [path.join(s.project, 'pkg', 'a.js')]);
+});
+
+test('patch reads its diff from stdin and strips -p parts from the working directory', (t) => {
+  const s = setup(t);
+  fs.writeFileSync(path.join(s.project, 'fix.diff'), '--- old/src/a.py\n+++ new/src/a.py\n@@ -1 +1 @@\n-x\n+y\n');
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'patch -p1 < fix.diff && npm test' } });
+  const records = s.ledger().records;
+  assert.deepEqual(records.map((r) => r.kind), ['edit', 'command']);
+  assert.equal(records[0].path, path.join(s.project, 'src', 'a.py'));
+});
+
+test('a patch that cannot be read records nothing', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'git apply missing.patch' } });
+  assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit'), []);
+});
