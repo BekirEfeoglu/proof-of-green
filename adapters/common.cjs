@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('node:fs');
 const path = require('node:path');
 const { suggestTestCommand, isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
@@ -58,6 +59,11 @@ function stopResponse(records, ledger, config, payload, note) {
   return {};
 }
 
+// The hook runs after the command, so the file system shows whether `cp a.js lib` copied into a directory.
+function isDirectory(p) {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+
 // Pushes the command record together with the code files its script writes. The edits come
 // first only when a test command runs after the last write (`sed -i a.js && npm test`);
 // otherwise (`npm test && sed -i a.js`) the command's result cannot cover them.
@@ -66,6 +72,7 @@ function pushShellCommand(out, script, cwd, config, record) {
   const edits = [];
   let lastEnd = -1;
   for (const e of shellEdits(script)) {
+    if (e.ifDir !== undefined && !isDirectory(path.resolve(cwd, e.ifDir))) continue;
     const abs = path.resolve(cwd, e.path);
     if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) continue;
     edits.push({ kind: 'edit', path: abs });

@@ -108,3 +108,27 @@ test('shellEdits gives where the writing command ends', () => {
   const doc = "cat > a.js <<'EOF'\nnpm test\nEOF\nnpm test";
   assert.equal(doc.slice(shellEdits(doc)[0].end), '\nnpm test');
 });
+
+const writes = (command) => shellEdits(command).map(({ end, ...rest }) => rest);
+
+test('cp writes its destination; into a directory it writes dir/<source name>', () => {
+  assert.deepEqual(writes('cp a.js b.js'), [{ path: 'b.js' }, { path: 'b.js/a.js', ifDir: 'b.js' }]);
+  assert.deepEqual(writes('cp -r x.js y.ts lib/'), [{ path: 'lib/x.js' }, { path: 'lib/y.ts' }]);
+  assert.deepEqual(writes('cp x.js y.ts lib'), [{ path: 'lib/x.js' }, { path: 'lib/y.ts' }]);
+  assert.deepEqual(writes('cp -t lib a.js'), [{ path: 'lib/a.js' }]);
+  assert.deepEqual(writes('cp --target-directory=lib a.js'), [{ path: 'lib/a.js' }]);
+  assert.deepEqual(writes('cp -T a.js b.js'), [{ path: 'b.js' }]);
+  assert.deepEqual(writes('cp a.js'), []);
+  assert.deepEqual(writes('cp "$SRC" b.js'), [{ path: 'b.js' }]);
+  assert.deepEqual(writes('cp a.js "$DEST"'), []);
+});
+
+test('mv also removes its sources', () => {
+  assert.deepEqual(writes('mv old.js new.js'), [{ path: 'old.js' }, { path: 'new.js' }, { path: 'new.js/old.js', ifDir: 'new.js' }]);
+  assert.deepEqual(writes('mv -f a.py b.py pkg/'), [{ path: 'a.py' }, { path: 'b.py' }, { path: 'pkg/a.py' }, { path: 'pkg/b.py' }]);
+});
+
+test('PowerShell Copy-Item and Move-Item write their destination', () => {
+  assert.deepEqual(writes('Copy-Item -Path a.ts -Destination b.ts'), [{ path: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('Move-Item a.ts b.ts -Force'), [{ path: 'a.ts' }, { path: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+});
