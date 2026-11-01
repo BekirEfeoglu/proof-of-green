@@ -35,13 +35,15 @@ function recordTool(out, payload, cwd, config, result) {
       out.push({ kind: 'command', command, via: tool, isTest: ran && isTestCommand(command, config.testPatterns), result: 'fail' });
       return true;
     }
-    out.push({
+    const record = {
       kind: 'command',
       command,
       via: tool,
       isTest: isTestCommand(command, config.testPatterns),
       result: readToolExitCode(payload.tool_response, listed.exitCodeField),
-    });
+    };
+    if (isMaskedTest(command, config.testPatterns)) record.masked = true;
+    out.push(record);
     return true;
   }
   // Listed after testTools, so a tool in both lists is a test tool.
