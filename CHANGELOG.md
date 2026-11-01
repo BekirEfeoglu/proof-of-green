@@ -6,7 +6,7 @@
 - Package manager options before the script name count: `npm --prefix api test`, `npm -w pkg test`, `pnpm -C api test`, `pnpm --filter web test`, `yarn workspace web test`. A flag value is never read as the script name, so `npm --prefix test install` is not a test. Gradle and Maven accept flags, `clean`, task paths such as `./gradlew :app:test` and variant tasks such as `testDebugUnitTest`.
 - Forms that run no tests do not count: `-DskipTests`, `-Dmaven.test.skip`, `gradle --dry-run`, `-m` or `-x test`, `tox --notest`, `tox -l`, `nox --list`, a `tox -e` or `nox -s` session that is not a test session, `ctest -N` and `swift test --list-tests`.
 - New test runners: `bundle exec rspec`, `rake test`, `rails test`, `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`, `tox`, `nox`, `hatch test` and `uvx pytest`.
-- `cp`, `mv`, `Copy-Item` and `Move-Item` (also `copy`, `cpi`, `move`, `mi`) count as edits. A copy into a directory counts as the file it puts there, and a move also counts its source.
+- `cp`, `mv`, `Copy-Item` and `Move-Item` (also `copy`, `cpi`, `move`, `mi`) count as edits. A copy into a directory counts as the file it puts there, a move also counts its source, and copying a whole directory counts up to 50 code files under the result.
 - `doctor` shows the five newest errors as one dated line each, sorted across ledger folders, instead of the last raw lines of the log.
 
 ## 0.5.0 (2026-11-01)
