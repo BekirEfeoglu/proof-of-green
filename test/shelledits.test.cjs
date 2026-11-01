@@ -253,3 +253,18 @@ test('deleting a file counts as writing it', () => {
   ]);
   assert.deepEqual(writes('git mv old.js new.js'), [{ path: 'old.js' }, { path: 'new.js', unlessExists: 'new.js/old.js' }, { path: 'new.js/old.js', ifDir: 'new.js' }]);
 });
+
+test('PowerShell New-Item -Value, Tee-Object and .NET file writes name their file', () => {
+  cases([
+    ['New-Item -Path src/a.ts -ItemType File -Value "x"', ['src/a.ts']],
+    ['ni a.ps1 -Value $body -Force', ['a.ps1']],
+    ['New-Item a.ts', []],
+    ['New-Item -ItemType Directory lib', []],
+    ['Get-Content x | Tee-Object -FilePath out.cs', ['out.cs']],
+    ["[IO.File]::WriteAllText('src/a.js', $code)", ['src/a.js']],
+    ['[System.IO.File]::WriteAllLines("b.py", $lines)', ['b.py']],
+    ["[io.file]::AppendAllText( 'c.go', 'x')", ['c.go']],
+    ['[IO.File]::WriteAllText($path, $code)', []],
+    ["[IO.File]::ReadAllText('a.js')", []],
+  ]);
+});
