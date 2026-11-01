@@ -73,10 +73,12 @@ A shell command counts when it starts a built-in test runner:
 - `vitest`, `jest`, `mocha` or `playwright test` through `npx`, `bunx`, `pnpm`, `pnpm exec` or `yarn`
 - `pytest`, `python -m pytest`, `python -m unittest`, also through `py` or `py -3`
 - `node --test`, `go test`, `cargo test`, `cargo nextest`, `dotnet test`, `deno test`
-- `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test`, `verify` or `check`, after flags or `clean`, or as a task path such as `:app:test` (`-x test` does not count)
+- `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test`, `verify` or `check`, after flags or `clean`, as a task path such as `:app:test`, or as a variant task such as `testDebugUnitTest`
 - `make test`, `make check`, `rspec`, `phpunit`, `rake test`, `rails test` (also through `bundle exec`), `mix test`
 - `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`
 - `tox`, `nox`, `hatch test`, `uvx pytest`
+
+Forms that run no tests don't count: `-DskipTests`, `-Dmaven.test.skip`, `gradle --dry-run`, `-m` or `-x test`, `tox --notest`, `tox -l`, `nox --list`, a `tox -e` or `nox -s` session whose name doesn't start with `py` or `test`, `ctest -N` and `swift test --list-tests`. In `npm`, `pnpm`, `yarn` and `bun`, only `--prefix`, `--workspace`, `--dir`, `--filter`, `--cwd`, `-w`, `-C` and `-F` take a separate value, so `npm --prefix test install` is not a test.
 
 A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first. You can add your own patterns in the config.
 
