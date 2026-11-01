@@ -1,12 +1,13 @@
 'use strict';
 
 // Finds the files a shell command writes through the common forms: > and >> redirections,
-// tee, sed -i, perl -i, PowerShell's Set-Content, Add-Content and Out-File, cp, mv, rm and Remove-Item, git
-// checkout, restore, rm and mv with paths, and git apply or patch (as the patch file they read). Anything
-// else (scripts, node -e, git switch or pull) is not seen. Paths that hold a variable are skipped.
+// tee, sed -i, perl -i, PowerShell's Set-Content, Add-Content, Out-File, Tee-Object, New-Item
+// -Value and [IO.File]::Write*, cp, mv, rm and Remove-Item, git checkout, restore, rm and mv with
+// paths, and git apply or patch (as the patch they read). Anything else (scripts, node -e, git
+// switch or pull) is not seen. Paths that hold a variable are skipped.
 
 const NULL_TARGETS = new Set(['/dev/null', 'nul', 'nul:']);
-const PS_WRITERS = new Set(['set-content', 'add-content', 'out-file']);
+const PS_WRITERS = new Set(['set-content', 'add-content', 'out-file', 'tee-object']);
 const PS_PATH_PARAMS = new Set(['-path', '-filepath', '-literalpath']);
 const PS_SWITCHES = new Set(['-force', '-nonewline', '-append', '-noclobber', '-passthru', '-whatif', '-confirm']);
 
@@ -391,12 +392,39 @@ function patchWrites(args, stdin) {
   return [{ ...from, strip, ...(base ? { base: base.text } : {}) }];
 }
 
+// [IO.File]::WriteAllText('a.js', ...): the tokenizer drops the quotes, so the first word holds the
+// call and, unless a space follows the parenthesis, the path.
+const DOTNET_WRITE = /^\[(?:system\.)?io\.file\]::(?:writeall(?:text|lines|bytes)|appendall(?:text|lines))\((.*)$/i;
+
+// New-Item writes content only with -Value; without it the new file is empty.
+function newItemPath(args) {
+  let target = null;
+  let name = null;
+  let value = false;
+  let dir = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].dynamic ? '' : args[i].text.toLowerCase();
+    if (a === '-path') target = args[++i] || null;
+    else if (a === '-name') name = args[++i] || null;
+    else if (a === '-itemtype' || a === '-type') dir = /^d/i.test((args[++i] || { text: '' }).text);
+    else if (a === '-value') { value = true; i++; } else if (!a.startsWith('-') && !target) target = args[i];
+  }
+  if (!value || dir || !target || (name && name.dynamic)) return [];
+  return [name ? { ...target, text: `${target.text.replace(/[\\/]+$/, '')}/${name.text}` } : target];
+}
+
 // Returns { path, ifDir?, unlessExists? } for each file the command writes, or { patch, strip,
 // base?, repoRoot? } for a patch it applies. stdin is the word after <.
 function commandWrites(words, stdin) {
   const argv = words.slice();
   while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
   if (!argv.length || argv[0].dynamic) return [];
+  const dotnet = DOTNET_WRITE.exec(argv[0].text);
+  if (dotnet) {
+    const target = dotnet[1] ? argv[0] : argv[1];
+    const file = target ? (dotnet[1] || target.text).replace(/[,)]+$/, '') : '';
+    return file && !target.dynamic ? [{ path: file }] : [];
+  }
   const name = argv[0].text.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase();
   const args = argv.slice(1);
   if (name === 'cp' || name === 'mv') return copyMoveWrites(args, name === 'mv');
@@ -409,6 +437,7 @@ function commandWrites(words, stdin) {
   else if (name === 'sed') files = sedFiles(args);
   else if (name === 'perl') files = perlFiles(args);
   else if (PS_WRITERS.has(name)) files = psPath(args);
+  else if (name === 'new-item' || name === 'ni') files = newItemPath(args);
   return files.filter((w) => !w.dynamic).map((w) => ({ path: w.text }));
 }
 
