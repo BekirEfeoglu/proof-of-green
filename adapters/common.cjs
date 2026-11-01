@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { suggestTestCommand, isTestCommand, isMaskedTest } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
-const { shellEdits } = require('../core/shelledits.cjs');
+const { shellEdits, patchPaths } = require('../core/shelledits.cjs');
 const { decide } = require('../core/policy.cjs');
 const { currentTurnRecords } = require('../core/ledger.cjs');
 
@@ -89,6 +89,29 @@ function codeFilesUnder(dir, config) {
 
 const codeOpts = (config) => ({ root: config.root, include: config.include, exclude: config.exclude });
 
+const PATCH_MAX_BYTES = 1024 * 1024;
+
+function gitRoot(dir) {
+  for (let d = dir; ; d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, '.git'))) return d;
+    if (path.dirname(d) === d) return null;
+  }
+}
+
+// The files a `git apply` or `patch` changed, read from the patch after the command ran. git apply
+// takes the paths from the repository root, patch from its directory. A missing or large patch gives none.
+function patchTargets(e, cwd) {
+  let text;
+  try {
+    const file = path.resolve(cwd, e.patch);
+    if (fs.statSync(file).size > PATCH_MAX_BYTES) return [];
+    text = fs.readFileSync(file, 'utf8');
+  } catch { return []; }
+  const dir = path.resolve(cwd, e.base || '.');
+  const from = e.repoRoot ? gitRoot(dir) || dir : dir;
+  return patchPaths(text, e.strip).map((p) => path.resolve(from, p));
+}
+
 // Pushes the command record together with the code files its script writes. The edits come
 // first only when a test command runs after the last write (`sed -i a.js && npm test`);
 // otherwise (`npm test && sed -i a.js`) the command's result cannot cover them. A masked test
@@ -100,8 +123,9 @@ function pushShellCommand(out, script, cwd, config, record) {
   for (const e of shellEdits(script)) {
     if (e.ifDir !== undefined && !isDirectory(path.resolve(cwd, e.ifDir))) continue;
     if (e.unlessExists !== undefined && fs.existsSync(path.resolve(cwd, e.unlessExists))) continue;
-    const abs = path.resolve(cwd, e.path);
-    const files = isDirectory(abs) ? codeFilesUnder(abs, config) : isCodeFile(abs, codeOpts(config)) ? [abs] : [];
+    const targets = e.patch !== undefined ? patchTargets(e, cwd) : [path.resolve(cwd, e.path)];
+    const files = targets.flatMap((abs) =>
+      isDirectory(abs) ? codeFilesUnder(abs, config) : isCodeFile(abs, codeOpts(config)) ? [abs] : []);
     if (files.length === 0) continue;
     for (const f of files) edits.push({ kind: 'edit', path: f });
     lastEnd = Math.max(lastEnd, e.end);

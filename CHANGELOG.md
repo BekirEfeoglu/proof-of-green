@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `git checkout` and `git restore` count as edits of the paths they name: `git checkout -- a.js`, `git checkout HEAD~1 -- src/`, `git restore .`, also with `git -C dir`. `git restore --staged` alone, `git checkout -b` and `git switch` don't count.
+- `git apply` and `patch` count the code files named in the patch, with `-p`, `-d` and `-i` applied. git apply's paths are taken from the repository root. A patch read through `<` counts too.
+- `git checkout` left the Known limits list. Git commands that change the whole working tree are listed there instead.
+
 ## 0.6.0 (2026-11-01)
 
 - When a test ran but its exit code was hidden (`npm test | tail`, `npm test; git push`), the block reason now names that command and says to join anything after the test with `&&`. Before, it said no test had run.
