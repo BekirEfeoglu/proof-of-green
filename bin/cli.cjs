@@ -178,12 +178,17 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
   } catch { /* missing or unreadable: not installed */ }
 
   const ledgerDirs = allLedgerDirs({ homeDir, env, platform });
-  const lines = [];
+  // One line per error: the timestamped first line of each entry, newest last across all dirs.
+  // Stack frames are left out; the log itself keeps them.
+  const entries = [];
   for (const dir of ledgerDirs) {
     try {
-      lines.push(...fs.readFileSync(path.join(dir, 'errors.log'), 'utf8').split(/\r?\n/).filter((l) => l.trim()));
+      for (const l of fs.readFileSync(path.join(dir, 'errors.log'), 'utf8').split(/\r?\n/)) {
+        if (/^\d{4}-\d\d-\d\dT[\d:.]+Z /.test(l)) entries.push(l);
+      }
     } catch { /* no log */ }
   }
+  entries.sort((a, b) => (a.slice(0, 24) < b.slice(0, 24) ? -1 : a.slice(0, 24) > b.slice(0, 24) ? 1 : 0));
   const projectFile = cwd ? findProjectConfig(cwd).file : null;
   return {
     claude: { installed: claudeInstalled(homeDir) },
@@ -196,7 +201,7 @@ function doctor({ homeDir = os.homedir(), env = process.env, platform = process.
       trusted: codexTrusted(path.join(homeDir, '.codex', 'config.toml'), hooksFile),
     },
     ledgerDirs,
-    lastErrors: lines.slice(-5),
+    lastErrors: entries.slice(-5),
   };
 }
 
