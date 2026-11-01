@@ -10,6 +10,7 @@
 - A test run through a listed MCP tool with its exit code hidden (`npm test | tail`) now gets the hidden-exit-code block reason, as a shell run does. Before, the reason said no test had run.
 - `status` marks a test command whose exit code was hidden as `[test, exit code hidden]` instead of `[not a test]`, matching the block reason. `status --json` gives it `masked: true`.
 - More test commands count: `vitest`, `jest`, `ava` and `tap` run without `npx`, from `node_modules/.bin` or with `npx --yes`; `cypress run`, `karma start`, `ng test`; `vendor/bin/phpunit` and `pest`; and the test task of `turbo`, `nx`, `deno task`, `mise run` and `task`. Before, the gate blocked after these tests ran.
+- Test commands of more languages count: `python manage.py test`, `bazel test`, `xcodebuild test`, `gotestsum`, `rake spec`, `stack test`, `cabal test`, `dune test`, `meson test`, `ninja test`, `lein test`, `clojure -X:test`, `nimble test`, `busted`, `R CMD check`, `rye test` and `uvx --with ... pytest`. `pixi run` and `conda run` are skipped like `uv run`.
 - Old ledgers are pruned at most once an hour instead of on every hook call, so a hook no longer scans the ledger folder each time. A `.last-prune` file in that folder records the last scan.
 
 ## 0.6.0 (2026-11-01)

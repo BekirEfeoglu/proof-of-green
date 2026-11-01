@@ -77,11 +77,12 @@ A shell command counts when it starts a built-in test runner:
 - `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test`, `verify` or `check`, after flags or `clean`, as a task path such as `:app:test`, or as a variant task such as `testDebugUnitTest`
 - `make test`, `make check`, `rspec`, `phpunit` and `pest` (also from `vendor/bin`), `rake test`, `rails test` (also through `bundle exec`), `mix test`
 - `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`
-- `tox`, `nox`, `hatch test`, `uvx pytest`
+- `tox`, `nox`, `hatch test`, `rye test`, `uvx pytest` (also with `--with`, `--from` or `--python`), `python manage.py test`
+- `bazel test`, `xcodebuild test` (or `test-without-building`), `gotestsum`, `rake spec`, `stack test`, `cabal test`, `dune test` or `dune runtest`, `meson test`, `ninja test`, `lein test`, `clojure -X:test` or `clj -M:test`, `nimble test`, `busted`, `R CMD check`
 
 Forms that run no tests don't count: `-DskipTests`, `-Dmaven.test.skip`, `gradle --dry-run`, `-m` or `-x test`, `tox --notest`, `tox -l`, `nox --list`, a `tox -e` or `nox -s` session whose name doesn't start with `py` or `test`, `ctest -N` and `swift test --list-tests`. In `npm`, `pnpm`, `yarn` and `bun`, only `--prefix`, `--workspace`, `--dir`, `--filter`, `--cwd`, `-w`, `-C` and `-F` take a separate value, so `npm --prefix test install` is not a test.
 
-A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first. You can add your own patterns in the config.
+A leading `uv run`, `poetry run`, `pipenv run`, `hatch run`, `pdm run`, `pixi run` or `conda run` (with `-n env`) is skipped, so `uv run pytest` counts. `hatch run test` doesn't count: without a script named `test` it runs the shell's own `test`, which can exit 0 without running anything. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first. You can add your own patterns in the config.
 
 The exit code the agent sees has to be the test's own. So every command after the first test command must be joined with `&&`:
 
