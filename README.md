@@ -36,10 +36,10 @@ Start a new session afterwards; hooks are loaded when a session starts. To updat
 
 ### Codex CLI
 
-The npm package is not published yet, so run the installer from GitHub:
+Run the installer from npm:
 
 ```
-npx github:BekirEfeoglu/proof-of-green install codex
+npx proof-of-green install codex
 ```
 
 This copies the gate into Codex's state folder and adds two hooks (`PostToolUse` and `Stop`) to `~/.codex/hooks.json`. Codex skips new hooks until you trust them, so open `/hooks` in Codex and trust the proof-of-green entries. Running the installer again after an upgrade changes the `PostToolUse` hook in place, and Codex asks you to trust it again.
@@ -47,7 +47,7 @@ This copies the gate into Codex's state folder and adds two hooks (`PostToolUse`
 ### Check the install
 
 ```
-npx github:BekirEfeoglu/proof-of-green doctor
+npx proof-of-green doctor
 ```
 
 `doctor` reports whether the Claude Code plugin and the Codex hooks are installed, whether Codex trusts them, what it found in your config files, where the ledgers live, and the last logged errors. Add `--json` for machine-readable output.
@@ -176,7 +176,7 @@ The main session's stop still looks at every edit in the turn, so changes a suba
 `proof-of-green status` shows what the gate would do right now, without changing anything:
 
 ```
-npx github:BekirEfeoglu/proof-of-green status
+npx proof-of-green status
 ```
 
 It reads the most recently modified ledger and prints the code files edited this turn, the commands the gate recorded with their result, and a verdict: `Would allow`, `Would allow with note: ...` or `Would block: ...`. Add `--json` for the same data as JSON. With several sessions active it may pick a different one than you mean. On Codex the verdict can differ from the real stop, because status does not read Codex's session log.
@@ -197,7 +197,7 @@ claude plugin marketplace remove proof-of-green
 Codex:
 
 ```
-npx github:BekirEfeoglu/proof-of-green uninstall codex
+npx proof-of-green uninstall codex
 ```
 
 This removes the two proof-of-green entries from `~/.codex/hooks.json` and deletes the copied gate. Your other hooks stay. The ledgers and logs stay in `proof-of-green` inside Codex's state folder (`%LOCALAPPDATA%` on Windows, `$XDG_STATE_HOME` or `~/.local/state` elsewhere); delete that folder too if you want them gone. `doctor` shows where it is.
