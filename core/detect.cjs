@@ -72,6 +72,12 @@ function isTestCommand(command, extraPatterns = []) {
   return !masked(command, patterns);
 }
 
+// A test ran, but the command's exit code may not be the test's (`npm test | tail`, `npm test; git push`).
+function isMaskedTest(command, extraPatterns = []) {
+  const patterns = [...BUILTIN_TEST_PATTERNS, ...extraPatterns];
+  return segments(command).some((seg) => isTestSegment(seg, patterns)) && masked(command, patterns);
+}
+
 function suggestTestCommand(projectDir) {
   const has = (f) => fs.existsSync(path.join(projectDir, f));
   if (has('package.json')) {
@@ -87,4 +93,4 @@ function suggestTestCommand(projectDir) {
   return null;
 }
 
-module.exports = { isTestCommand, isMasked, suggestTestCommand, BUILTIN_TEST_PATTERNS };
+module.exports = { isTestCommand, isMasked, isMaskedTest, suggestTestCommand, BUILTIN_TEST_PATTERNS };

@@ -377,3 +377,11 @@ test('a test that runs before a shell edit in the same Bash call does not cover 
   const rollout = s.rollout([{ call_id: 'c1', command: ['bash', '-lc', "npm test && sed -i 's/a/b/' src/a.js"], exit_code: 0 }]);
   assert.equal(s.send('stop', { transcript_path: rollout }).decision, 'block');
 });
+
+test('a Codex test command with a hidden exit code is recorded as masked', (t) => {
+  const s = setup(t);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', bash(['bash', '-lc', 'npm test; git push'], 'c1'));
+  assert.equal(s.ledger().records.at(-1).masked, true);
+  assert.match(s.send('stop', { transcript_path: null }).reason, /exit code was hidden/);
+});

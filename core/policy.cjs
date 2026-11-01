@@ -16,6 +16,12 @@ function fileList(edits) {
   return names.length > MAX_FILES ? `${shown} (+${names.length - MAX_FILES} more)` : shown;
 }
 
+const MAX_COMMAND = 120;
+const shortCommand = (c) => {
+  const flat = String(c).replace(/\s+/g, ' ').trim();
+  return flat.length > MAX_COMMAND ? `${flat.slice(0, MAX_COMMAND - 3)}...` : flat;
+};
+
 function decide(records, opts) {
   const o = opts && typeof opts === 'object' ? opts : {};
   if (o.enabled !== true || o.stopHookActive === true || !Array.isArray(records)) return { action: 'allow' };
@@ -34,9 +40,15 @@ function decide(records, opts) {
   if (last && last.result !== 'fail') return { action: 'allow', systemMessage: UNVERIFIED };
 
   const files = fileList(edits);
-  const head = last
-    ? `proof-of-green: you changed code (${files}) and the last test run after that change failed. Fix the failures and run the tests again, or report the failing tests to the user.`
-    : `proof-of-green: you changed code (${files}) but no test command ran after the last change. Run the tests and report the result.`;
+  const hidden = last ? undefined : recs.filter((r) => r.kind === 'command' && r.masked === true && r.seq > lastEditSeq).pop();
+  let head;
+  if (last) {
+    head = `proof-of-green: you changed code (${files}) and the last test run after that change failed. Fix the failures and run the tests again, or report the failing tests to the user.`;
+  } else if (hidden) {
+    head = `proof-of-green: you changed code (${files}) and a test command ran after that change, but its exit code was hidden: \`${shortCommand(hidden.command)}\`. Run the tests again so the exit code is the test's own: join anything after the test with \`&&\`, and don't pipe its output or chain other commands with \`;\`.`;
+  } else {
+    head = `proof-of-green: you changed code (${files}) but no test command ran after the last change. Run the tests and report the result.`;
+  }
   const via = typeof o.suggestedVia === 'string' && o.suggestedVia ? ` (through ${o.suggestedVia})` : '';
   const suggest = typeof o.suggestedCommand === 'string' && o.suggestedCommand
     ? ` Suggested command: \`${o.suggestedCommand}\`${via}.`

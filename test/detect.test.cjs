@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { isTestCommand, isMasked, suggestTestCommand, BUILTIN_TEST_PATTERNS } = require('../core/detect.cjs');
+const { isTestCommand, isMasked, isMaskedTest, suggestTestCommand, BUILTIN_TEST_PATTERNS } = require('../core/detect.cjs');
 
 const yes = ['npm test', 'npm run test:unit', 'pnpm test', 'yarn test', 'bun test', 'npx vitest run',
   'npx jest', 'pytest -q', 'python -m pytest tests/', 'python3 -m unittest', 'go test ./...',
@@ -110,4 +110,14 @@ test('test script names with a -, _ or : suffix count; look-alike names do not',
     assert.equal(isTestCommand(c), true, c);
   }
   for (const c of ['npm run testing', 'npm run attest']) assert.equal(isTestCommand(c), false, c);
+});
+
+test('isMaskedTest is true only when a test ran with its exit code hidden', () => {
+  assert.equal(isMaskedTest('npm test | grep pass'), true);
+  assert.equal(isMaskedTest('npm test; git push'), true);
+  assert.equal(isMaskedTest('npm test || true'), true);
+  assert.equal(isMaskedTest('npm test'), false);
+  assert.equal(isMaskedTest('npm test && echo ok'), false);
+  assert.equal(isMaskedTest('ls | grep x'), false);
+  assert.equal(isMaskedTest('make verify | tail', [/^make verify$/]), true);
 });

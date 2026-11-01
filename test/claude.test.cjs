@@ -529,3 +529,13 @@ test('a test that runs before a shell edit in the same command does not cover it
   assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command', 'edit']);
   assert.equal(s.send('stop', {}).decision, 'block');
 });
+
+test('a test command with a hidden exit code is recorded as masked and named in the block', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } });
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'npm test 2>&1 | tail -5' } });
+  const last = s.ledger().records.at(-1);
+  assert.deepEqual([last.isTest, last.masked], [false, true]);
+  assert.match(s.send('stop', {}).reason, /exit code was hidden/);
+});

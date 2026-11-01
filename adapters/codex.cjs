@@ -1,6 +1,6 @@
 'use strict';
 const path = require('node:path');
-const { isTestCommand } = require('../core/detect.cjs');
+const { isTestCommand, isMaskedTest } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { readLedger, appendRecord, startTurn, currentTurnRecords } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
@@ -94,6 +94,7 @@ function recordTool(out, payload, cwd, config) {
     if (!command) return false;
     const script = innerScript(input.command);
     const record = { kind: 'command', command, isTest: isTestCommand(script, config.testPatterns), result: 'unknown' };
+    if (isMaskedTest(script, config.testPatterns)) record.masked = true;
     if (typeof payload.tool_use_id === 'string') record.id = payload.tool_use_id;
     pushShellCommand(out, script, cwd, config, record);
     return true;
