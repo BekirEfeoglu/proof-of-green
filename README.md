@@ -99,7 +99,7 @@ Two more rules:
 
 An edit counts when the file has a code extension (`.js`, `.ts`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.sql`, `.vue` and a few dozen more; the full list is in `core/codefiles.cjs`). Files under `node_modules`, `.git`, the OS temp folder, `~/.claude` and `~/.codex` never count.
 
-Edits made through the shell count too, when the command writes the file in one of these forms: a `>` or `>>` redirection, `tee`, `sed -i`, `perl -i`, or PowerShell's `Set-Content`, `Add-Content` and `Out-File`. Such an edit counts even if the command failed or ran in the background, and a test later in the same command (`sed -i ... a.js && npm test`) counts as running after it; a test before the edit (`npm test && sed -i ... a.js`) does not. A path that holds a variable (`> "$OUT/a.js"`) is skipped; a variable elsewhere in the command, such as the sed script, is not a reason to skip.
+Edits made through the shell count too, when the command writes the file with a `>` or `>>` redirection, `tee`, `sed -i`, `perl -i`, or PowerShell's `Set-Content`, `Add-Content` or `Out-File`. They count even if the command failed or ran in the background. Order inside one command matters: in `sed -i ... a.js && npm test` the test runs after the edit, in `npm test && sed -i ... a.js` it doesn't. A target path that holds a variable (`> "$OUT/a.js"`) is skipped, but a variable elsewhere doesn't hide the file: `sed -i "$script" a.js` still counts.
 
 ## Configuration
 
