@@ -235,3 +235,21 @@ test('git apply and patch read a heredoc as the patch text', () => {
   assert.deepEqual(writes('git apply --check <<EOF\n--- a/x.js\n+++ b/x.js\nEOF'), []);
   assert.deepEqual(writes('git apply fix.patch <<EOF\nignored\nEOF'), [{ patch: 'fix.patch', strip: 1, repoRoot: true }]);
 });
+
+test('deleting a file counts as writing it', () => {
+  cases([
+    ['rm src/a.js', ['src/a.js']],
+    ['rm -f a.js b.ts', ['a.js', 'b.ts']],
+    ['rm -rf -- -odd.js', ['-odd.js']],
+    ['unlink a.py', ['a.py']],
+    ['del a.cs', ['a.cs']],
+    ['Remove-Item -Path a.ps1 -Force', ['a.ps1']],
+    ['Remove-Item a.ts, b.ts', ['a.ts', 'b.ts']],
+    ['ri -LiteralPath x.go', ['x.go']],
+    ['git rm a.rb', ['a.rb']],
+    ['git rm -r -q --force lib/x.rb', ['lib/x.rb']],
+    ['rm "$F"', []],
+    ['git rm --cached a.rb', []],
+  ]);
+  assert.deepEqual(writes('git mv old.js new.js'), [{ path: 'old.js' }, { path: 'new.js', unlessExists: 'new.js/old.js' }, { path: 'new.js/old.js', ifDir: 'new.js' }]);
+});

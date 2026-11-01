@@ -1,8 +1,8 @@
 'use strict';
 
 // Finds the files a shell command writes through the common forms: > and >> redirections,
-// tee, sed -i, perl -i, PowerShell's Set-Content, Add-Content and Out-File, cp and mv, git
-// checkout and restore with paths, and git apply or patch (as the patch file they read). Anything
+// tee, sed -i, perl -i, PowerShell's Set-Content, Add-Content and Out-File, cp, mv, rm and Remove-Item, git
+// checkout, restore, rm and mv with paths, and git apply or patch (as the patch file they read). Anything
 // else (scripts, node -e, git switch or pull) is not seen. Paths that hold a variable are skipped.
 
 const NULL_TARGETS = new Set(['/dev/null', 'nul', 'nul:']);
@@ -231,6 +231,26 @@ function psCopyMoveWrites(args, isMove) {
 const PS_COPY = new Set(['copy-item', 'cpi', 'copy']);
 const PS_MOVE = new Set(['move-item', 'mi', 'move']);
 
+// A deleted file counts as written. PowerShell and cmd forms take comma-separated lists.
+const REMOVERS = new Set(['rm', 'unlink']);
+const PS_REMOVERS = new Set(['remove-item', 'ri', 'del', 'erase']);
+const RM_VALUE_PARAMS = new Set(['-filter', '-include', '-exclude', '-credential', '-stream']);
+
+function removeWrites(args, commaLists) {
+  const out = [];
+  let done = false;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
+    if (!done && !w.dynamic && w.text === '--') done = true;
+    else if (!done && !w.dynamic && w.text.startsWith('-') && w.text !== '-') {
+      if (RM_VALUE_PARAMS.has(w.text.toLowerCase())) i++;
+    } else if (!w.dynamic) {
+      for (const p of commaLists ? w.text.split(',') : [w.text]) if (p) out.push({ path: p });
+    }
+  }
+  return out;
+}
+
 const CHECKOUT_VALUES = new Set(['-b', '-B', '--orphan', '--pathspec-from-file']);
 
 // Without `--` a checkout operand may be a branch or a path; all are returned, and a branch name
@@ -291,6 +311,20 @@ function applyPatches(args, stdin, at) {
   return read.filter((w) => !w.dynamic).map((w) => ({ patch: w.text, strip, repoRoot: true }));
 }
 
+// `git rm --cached` and `-n` change nothing in the working tree.
+function gitRmPaths(args) {
+  let done = false;
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].text;
+    if (done || args[i].dynamic || !a.startsWith('-') || a === '-') operands.push(args[i]);
+    else if (a === '--') done = true;
+    else if (a === '--cached' || a === '-n' || a === '--dry-run') return [];
+    else if (a === '--pathspec-from-file') i++;
+  }
+  return operands;
+}
+
 function gitWrites(args, stdin) {
   let base = '';
   let i = 0;
@@ -309,6 +343,15 @@ function gitWrites(args, stdin) {
   let paths = [];
   if (sub === 'checkout') paths = checkoutPaths(rest);
   else if (sub === 'restore') paths = restorePaths(rest);
+  else if (sub === 'rm') paths = gitRmPaths(rest);
+  else if (sub === 'mv') {
+    return copyMoveWrites(rest, true).map((w) => {
+      const e = { path: at(w.path) };
+      if (w.ifDir !== undefined) e.ifDir = at(w.ifDir);
+      if (w.unlessExists !== undefined) e.unlessExists = at(w.unlessExists);
+      return e;
+    });
+  }
   else if (sub === 'apply') return applyPatches(rest, stdin, at).map((e) => (base ? { ...e, base } : e));
   return paths.filter((w) => !w.dynamic).map((w) => ({ path: at(w.text) }));
 }
@@ -358,6 +401,7 @@ function commandWrites(words, stdin) {
   const args = argv.slice(1);
   if (name === 'cp' || name === 'mv') return copyMoveWrites(args, name === 'mv');
   if (PS_COPY.has(name) || PS_MOVE.has(name)) return psCopyMoveWrites(args, PS_MOVE.has(name));
+  if (REMOVERS.has(name) || PS_REMOVERS.has(name)) return removeWrites(args, PS_REMOVERS.has(name));
   if (name === 'git') return gitWrites(args, stdin);
   if (name === 'patch') return patchWrites(args, stdin);
   let files = [];
