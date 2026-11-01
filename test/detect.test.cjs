@@ -155,3 +155,25 @@ test('long option lists are classified quickly (no exponential backtracking)', (
     assert.ok(Date.now() - start < 500, `${s.slice(0, 20)}... took ${Date.now() - start} ms`);
   }
 });
+
+test('a flag value is never read as the script name', () => {
+  for (const c of ['npm --prefix test install', 'npm --prefix test run build', 'pnpm --filter test build',
+    'npm -w test run build', 'yarn --cwd test build', 'bun --cwd test install', 'npm --prefix test-app ci',
+    'npm --silent install test', 'npm -g install test']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+  for (const c of ['npm --prefix test test', 'pnpm --filter test run test', 'npm -g test']) assert.equal(isTestCommand(c), true, c);
+});
+
+test('skip, dry-run and list-only flags do not count as tests', () => {
+  for (const c of ['mvn -DskipTests test', 'mvn test -DskipTests', 'mvn -Dmaven.test.skip=true verify',
+    'mvn -DskipTests=true test', 'gradle --dry-run test', 'gradle -m check', 'gradle check -x test',
+    './gradlew build -x testDebugUnitTest', 'tox --notest', 'tox -l', 'tox --help', 'nox --list', 'nox -s lint',
+    'tox -e lint', 'ctest -N', 'swift test --list-tests', 'gradle testClasses', 'mvn test-compile']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+  for (const c of ['mvn -o -T 4 test', 'mvn -f pom.xml test', 'mvn -pl mod test', 'gradle -p sub test',
+    './gradlew :app:testDebugUnitTest', 'mvn -DskipTests=false test', 'tox -e py312', 'nox -s tests', 'tox']) {
+    assert.equal(isTestCommand(c), true, c);
+  }
+});

@@ -549,3 +549,19 @@ test('cp into a directory records the copied file, cp onto a file records that f
   const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
   assert.deepEqual(edits, [path.join(s.project, 'lib', 'a.js'), path.join(s.project, 'b.js')]);
 });
+
+test('a shell edit followed by a hidden test in the same command gets the hidden-exit-code reason', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: "sed -i 's/a/b/' src/a.js && npm test | tail" } });
+  assert.deepEqual(s.ledger().records.map((r) => r.kind), ['edit', 'command']);
+  assert.match(s.send('stop', {}).reason, /exit code was hidden/);
+});
+
+test('cp onto a path that is a directory does not record that directory as a file', (t) => {
+  const s = setup(t);
+  fs.mkdirSync(path.join(s.project, 'lib.js'));
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp a.ts lib.js' } });
+  assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path), [path.join(s.project, 'lib.js', 'a.ts')]);
+});
