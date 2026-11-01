@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-01)
 
 - Shell commands that write a code file now count as edits, on Claude Code and Codex: `>` and `>>` redirections, `tee`, `sed -i`, `perl -i`, and PowerShell's `Set-Content`, `Add-Content` and `Out-File`. Before, an agent could change code with `sed -i` and stop without a test. Other ways of writing files through the shell are listed under Known limits.
+- Order inside one command is kept: `sed -i ... a.js && npm test` allows the stop, `npm test && sed -i ... a.js` blocks it.
+- A file operand that holds a variable is skipped, but a variable in the script does not hide the file: `sed -i "$script" a.js` still counts.
 
 ## 0.4.0 (2026-11-01)
 
