@@ -24,9 +24,8 @@ function tokenize(command) {
     const c = command[i];
     if (c === '\n') {
       flush();
-      tokens.push({ op: ';' });
       if (heredoc) {
-        // Skip the body up to the delimiter line.
+        // Skip the body; the command ends at the newline after the delimiter line.
         const lines = command.slice(i + 1).split('\n');
         let skipped = 0;
         let found = false;
@@ -36,7 +35,9 @@ function tokenize(command) {
         }
         i += found ? skipped - 1 : command.length;
         heredoc = null;
+        continue;
       }
+      tokens.push({ op: ';', at: i });
     } else if (/\s/.test(c)) flush();
     else if (c === "'") {
       const end = command.indexOf("'", i + 1);
@@ -82,29 +83,31 @@ function tokenize(command) {
       tokens.push({ op: '>' });
     } else if (c === ';' || c === '|' || c === '&') {
       flush();
+      tokens.push({ op: ';', at: i });
       if ((c === '|' || c === '&') && command[i + 1] === c) i++;
-      tokens.push({ op: ';' });
     } else add(c);
   }
   flush();
   return tokens;
 }
 
+// The parsers below take words ({ text, dynamic }) in their original positions, so a dynamic
+// script or option still takes its place; only the file operands they return are filtered.
 function sedFiles(args) {
   let inPlace = false;
   let scriptGiven = false;
   const rest = [];
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
+    const a = args[i].text;
     if (/^--in-place(?:=|$)/.test(a) || /^-[A-Za-z]*i/.test(a)) {
       inPlace = true;
       // BSD sed: `-i ''` takes the empty backup suffix as its own argument.
-      if (a === '-i' && args[i + 1] === '') i++;
+      if (a === '-i' && args[i + 1] && args[i + 1].text === '' && !args[i + 1].dynamic) i++;
     } else if (a === '-e' || a === '-f' || a === '--expression' || a === '--file') {
       scriptGiven = true;
       i++;
     } else if (/^--(?:expression|file)=/.test(a)) scriptGiven = true;
-    else if (!a.startsWith('-')) rest.push(a);
+    else if (!a.startsWith('-')) rest.push(args[i]);
   }
   if (!inPlace) return [];
   return scriptGiven ? rest : rest.slice(1);
@@ -115,9 +118,9 @@ function perlFiles(args) {
   let scriptGiven = false;
   const rest = [];
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
+    const a = args[i].text;
     if (/^-[A-Za-z]*i/.test(a)) inPlace = true;
-    if (/^-[A-Za-z]*[eE]$/.test(a)) { scriptGiven = true; i++; } else if (!a.startsWith('-')) rest.push(a);
+    if (/^-[A-Za-z]*[eE]$/.test(a)) { scriptGiven = true; i++; } else if (!a.startsWith('-')) rest.push(args[i]);
   }
   if (!inPlace) return [];
   return scriptGiven ? rest : rest.slice(1);
@@ -125,7 +128,7 @@ function perlFiles(args) {
 
 function psPath(args) {
   for (let i = 0; i < args.length; i++) {
-    const a = args[i].toLowerCase();
+    const a = args[i].text.toLowerCase();
     if (PS_PATH_PARAMS.has(a)) return args[i + 1] !== undefined ? [args[i + 1]] : [];
     if (a.startsWith('-')) {
       if (!PS_SWITCHES.has(a)) i++;
@@ -137,25 +140,38 @@ function psPath(args) {
 }
 
 function commandWrites(words) {
-  const argv = words.filter((w) => !w.dynamic).map((w) => w.text);
-  while (argv.length && /^[A-Za-z_]\w*=/.test(argv[0])) argv.shift();
-  if (!argv.length) return [];
-  const name = argv[0].replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase();
+  const argv = words.slice();
+  while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
+  if (!argv.length || argv[0].dynamic) return [];
+  const name = argv[0].text.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase();
   const args = argv.slice(1);
-  if (name === 'tee') return args.filter((a) => !a.startsWith('-'));
-  if (name === 'sed') return sedFiles(args);
-  if (name === 'perl') return perlFiles(args);
-  if (PS_WRITERS.has(name)) return psPath(args);
-  return [];
+  let files = [];
+  if (name === 'tee') files = args.filter((a) => !a.text.startsWith('-'));
+  else if (name === 'sed') files = sedFiles(args);
+  else if (name === 'perl') files = perlFiles(args);
+  else if (PS_WRITERS.has(name)) files = psPath(args);
+  return files.filter((w) => !w.dynamic).map((w) => w.text);
 }
 
-function shellEditPaths(command) {
+// Each code-relevant write as { path, end }: end is the offset where the writing command ends
+// (its separator, or the command's length), so a caller can tell what runs after the write.
+function shellEdits(command) {
   if (typeof command !== 'string' || !command) return [];
   const tokens = tokenize(command);
-  const paths = [];
-  const push = (p) => { if (p && !NULL_TARGETS.has(p.toLowerCase()) && !paths.includes(p)) paths.push(p); };
+  const edits = [];
+  let pending = [];
+  const push = (p) => { if (p && !NULL_TARGETS.has(p.toLowerCase())) pending.push(p); };
   let words = [];
-  const end = () => { for (const p of commandWrites(words)) push(p); words = []; };
+  const end = (at) => {
+    for (const p of commandWrites(words)) push(p);
+    for (const p of pending) {
+      const old = edits.findIndex((e) => e.path === p);
+      if (old >= 0) edits.splice(old, 1);
+      edits.push({ path: p, end: at });
+    }
+    words = [];
+    pending = [];
+  };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.op === '>') {
@@ -167,11 +183,18 @@ function shellEditPaths(command) {
     } else if (t.op === '<') {
       // The file read by < is not an argument of the command.
       if (tokens[i + 1] && !tokens[i + 1].op) i++;
-    } else if (t.op) end();
+    } else if (t.op) end(t.at);
     else words.push(t);
   }
-  end();
+  end(command.length);
+  return edits;
+}
+
+// The distinct paths a command writes, in order of first write.
+function shellEditPaths(command) {
+  const paths = [];
+  for (const e of shellEdits(command)) if (!paths.includes(e.path)) paths.push(e.path);
   return paths;
 }
 
-module.exports = { shellEditPaths };
+module.exports = { shellEdits, shellEditPaths };

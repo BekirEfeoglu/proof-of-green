@@ -2,10 +2,9 @@
 const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
-const { shellEditPaths } = require('../core/shelledits.cjs');
 const { readLedger, appendRecord, startTurn, currentTurnRecords } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
-const { stopResponse } = require('./common.cjs');
+const { stopResponse, pushShellCommand } = require('./common.cjs');
 const { readCommandResults } = require('./rollout.cjs');
 
 const PATCH_HEADER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/;
@@ -93,14 +92,10 @@ function recordTool(out, payload, cwd, config) {
   if (payload.tool_name === 'Bash') {
     const command = commandText(input.command);
     if (!command) return false;
-    // A file the script writes is an edit, recorded before the command (see the Claude adapter).
-    for (const p of shellEditPaths(innerScript(input.command))) {
-      const abs = path.resolve(cwd, p);
-      if (isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) out.push({ kind: 'edit', path: abs });
-    }
-    const record = { kind: 'command', command, isTest: isTestCommand(innerScript(input.command), config.testPatterns), result: 'unknown' };
+    const script = innerScript(input.command);
+    const record = { kind: 'command', command, isTest: isTestCommand(script, config.testPatterns), result: 'unknown' };
     if (typeof payload.tool_use_id === 'string') record.id = payload.tool_use_id;
-    out.push(record);
+    pushShellCommand(out, script, cwd, config, record);
     return true;
   }
   return false;

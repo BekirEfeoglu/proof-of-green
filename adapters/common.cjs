@@ -1,5 +1,8 @@
 'use strict';
-const { suggestTestCommand } = require('../core/detect.cjs');
+const path = require('node:path');
+const { suggestTestCommand, isTestCommand } = require('../core/detect.cjs');
+const { isCodeFile } = require('../core/codefiles.cjs');
+const { shellEdits } = require('../core/shelledits.cjs');
 const { decide } = require('../core/policy.cjs');
 const { currentTurnRecords } = require('../core/ledger.cjs');
 
@@ -55,4 +58,22 @@ function stopResponse(records, ledger, config, payload, note) {
   return {};
 }
 
-module.exports = { stopResponse, stopDecision, parentRecords, withNote };
+// Pushes the command record together with the code files its script writes. The edits come
+// first only when a test command runs after the last write (`sed -i a.js && npm test`);
+// otherwise (`npm test && sed -i a.js`) the command's result cannot cover them.
+// A file is an edit even when the command failed or runs in the background.
+function pushShellCommand(out, script, cwd, config, record) {
+  const edits = [];
+  let lastEnd = -1;
+  for (const e of shellEdits(script)) {
+    const abs = path.resolve(cwd, e.path);
+    if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) continue;
+    edits.push({ kind: 'edit', path: abs });
+    lastEnd = Math.max(lastEnd, e.end);
+  }
+  const testAfter = edits.length > 0 && record.isTest === true && isTestCommand(script.slice(lastEnd), config.testPatterns);
+  if (testAfter) out.push(...edits, record);
+  else out.push(record, ...edits);
+}
+
+module.exports = { stopResponse, stopDecision, parentRecords, withNote, pushShellCommand };
