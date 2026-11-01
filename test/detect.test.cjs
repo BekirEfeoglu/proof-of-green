@@ -121,3 +121,37 @@ test('isMaskedTest is true only when a test ran with its exit code hidden', () =
   assert.equal(isMaskedTest('ls | grep x'), false);
   assert.equal(isMaskedTest('make verify | tail', [/^make verify$/]), true);
 });
+
+test('workspace and directory options before test still count', () => {
+  const yesMore = ['npm --prefix api test', 'npm -w pkg test', 'npm --workspace=pkg run test', 'npm -ws test',
+    'npm --silent run test', 'pnpm -C api test', 'pnpm --filter "./pkg/**" test', 'pnpm -r test',
+    'pnpm --dir api run test:unit', 'yarn workspace @app/web test', 'yarn workspace web run test',
+    'yarn workspaces foreach -A run test', 'yarn --cwd api test', 'bun --cwd api test'];
+  for (const c of yesMore) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['npm install test', 'npm uninstall -g test', 'pnpm add test', 'npm view test']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+});
+
+test('more test runners count', () => {
+  const runners = ['bundle exec rspec', 'bundle exec rake test', 'rake test', 'rails test', 'bin/rails test',
+    'swift test', 'flutter test', 'dart test', 'zig build test', 'ctest --output-on-failure', 'sbt test',
+    'php artisan test', 'composer test', 'tox -e py312', 'nox -s tests', 'uvx pytest', 'hatch test',
+    'just test', 'gradle clean test', './gradlew :app:test', 'mvn -q verify', './gradlew check'];
+  for (const c of runners) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['gradle build -x test', 'bundle install', 'swift build', 'flutter run', 'composer install',
+    'rake db:migrate', 'just build']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+});
+
+test('long option lists are classified quickly (no exponential backtracking)', () => {
+  const inputs = ['npm ' + '--a=b '.repeat(4000), 'npm ' + '--a-b '.repeat(4000) + 'x',
+    'npm ' + '-a b '.repeat(4000) + 'x', './gradlew ' + '-q '.repeat(5000) + 'build',
+    'yarn workspaces foreach ' + '-x '.repeat(5000) + 'run tes'];
+  for (const s of inputs) {
+    const start = Date.now();
+    isTestCommand(s);
+    assert.ok(Date.now() - start < 500, `${s.slice(0, 20)}... took ${Date.now() - start} ms`);
+  }
+});

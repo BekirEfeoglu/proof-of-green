@@ -69,12 +69,14 @@ Any error inside the gate allows the stop and is appended to `errors.log` next t
 
 A shell command counts when it starts a built-in test runner:
 
-- `npm`, `pnpm`, `yarn` or `bun` with `test` or `run test`, `npm t`, and scripts whose name starts with `test` followed by `:`, `-` or `_` (`test:unit`, `test-e2e`)
+- `npm`, `pnpm`, `yarn` or `bun` with `test` or `run test`, `npm t`, and scripts whose name starts with `test` followed by `:`, `-` or `_` (`test:unit`, `test-e2e`). Options may come first (`npm --prefix api test`, `npm -w pkg test`, `pnpm -C api test`, `pnpm --filter web test`, `pnpm -r test`), and so may `yarn workspace <name>` or `yarn workspaces foreach`
 - `vitest`, `jest`, `mocha` or `playwright test` through `npx`, `bunx`, `pnpm`, `pnpm exec` or `yarn`
 - `pytest`, `python -m pytest`, `python -m unittest`, also through `py` or `py -3`
 - `node --test`, `go test`, `cargo test`, `cargo nextest`, `dotnet test`, `deno test`
-- `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test` or `verify`
-- `make test`, `make check`, `rspec`, `phpunit`, `mix test`
+- `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test`, `verify` or `check`, after flags or `clean`, or as a task path such as `:app:test` (`-x test` does not count)
+- `make test`, `make check`, `rspec`, `phpunit`, `rake test`, `rails test` (also through `bundle exec`), `mix test`
+- `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`
+- `tox`, `nox`, `hatch test`, `uvx pytest`
 
 A leading `uv run`, `poetry run`, `pipenv run`, `hatch run` or `pdm run` is skipped, so `uv run pytest` counts. On Codex, a `bash -lc "..."`, `sh -c`, `zsh -lc` or `pwsh -Command` wrapper is unwrapped first. You can add your own patterns in the config.
 

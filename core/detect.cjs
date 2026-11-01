@@ -2,8 +2,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Options before the script name (`--prefix api`, `-w pkg`, `--filter x`, `-r`); a value may follow
+// a flag as long as it is not the script name itself. The flag name starts with a word character,
+// so `--a` has one parse; `-{1,2}[\w-]+` would backtrack exponentially on long option lists.
+const PM_OPTIONS = String.raw`(?:\s+-{1,2}\w[\w-]*(?:=\S+|\s+(?!(?:run\s+)?test\b)[^\s-]\S*)?)*`;
+const YARN_WORKSPACE = String.raw`(?:\s+workspace\s+\S+|\s+workspaces\s+foreach(?:\s+-\S+)*)?`;
+
 const BUILTIN_TEST_PATTERNS = [
-  /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:[:_-]\S+)?(?:\s|$)/,
+  new RegExp(String.raw`^(?:npm|pnpm|yarn|bun)${PM_OPTIONS}${YARN_WORKSPACE}\s+(?:run\s+)?test(?:[:_-]\S+)?(?:\s|$)`),
   /^npm\s+t(?:\s|$)/,
   /^(?:npx|bunx|bun\s+x|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+dlx)?)\s+(?:vitest|jest|mocha|playwright\s+test)\b/,
   /^(?:(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+)?pytest\b/,
@@ -13,10 +19,20 @@ const BUILTIN_TEST_PATTERNS = [
   /^dotnet\s+test\b/,
   /^deno\s+test\b/,
   /^node\s+--test(?:\s|$)/,
-  /^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))\s+(?:test|verify)\b/,
+  // Flags and `clean` may come first, and a task path such as `:app:test`; `-x test` excludes tests.
+  /^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))(?:\s+(?:-(?!x\b)\S+|clean))*\s+(?:\S*:)?(?:test|verify|check)\b/,
   /^make\s+(?:test|check)\b/,
-  /^(?:rspec|phpunit)\b/,
+  /^(?:bundle\s+exec\s+)?(?:rspec|phpunit)\b/,
+  /^(?:bundle\s+exec\s+)?(?:rake|(?:bin[\\/])?rails)\s+test\b/,
   /^mix\s+test\b/,
+  /^(?:swift|flutter|dart|sbt|just)\s+test\b/,
+  /^zig\s+build\s+test\b/,
+  /^ctest\b/,
+  /^php\s+artisan\s+test\b/,
+  /^composer\s+(?:run(?:-script)?\s+)?test\b/,
+  /^(?:tox|nox)(?:\s|$)/,
+  /^uvx\s+pytest\b/,
+  /^hatch\s+test\b/,
 ];
 
 const stripQuotes = (s) => s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
