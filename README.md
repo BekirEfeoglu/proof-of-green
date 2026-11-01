@@ -99,6 +99,8 @@ Two more rules:
 
 An edit counts when the file has a code extension (`.js`, `.ts`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.sql`, `.vue` and a few dozen more; the full list is in `core/codefiles.cjs`). Files under `node_modules`, `.git`, the OS temp folder, `~/.claude` and `~/.codex` never count.
 
+Edits made through the shell count too, when the command writes the file in one of these forms: a `>` or `>>` redirection, `tee`, `sed -i`, `perl -i`, or PowerShell's `Set-Content`, `Add-Content` and `Out-File`. Such an edit counts even if the command failed or ran in the background, and a test later in the same command (`sed -i ... a.js && npm test`) counts as running after it. A path that holds a variable (`> "$OUT/a.js"`) is skipped.
+
 ## Configuration
 
 Everything is optional. There are two files, both named `.proof-of-green.json`:
@@ -202,6 +204,7 @@ This removes the two proof-of-green entries from `~/.codex/hooks.json` and delet
 - Codex hooks are experimental, and Codex skips untrusted hooks without a warning. Run `doctor` after installing.
 - Codex subagents are not checked separately.
 - A Claude Code subagent that ends without a `SubagentStop` event (for example, one that was killed) is left out of the main session's check for that turn, and its edits are not checked at all.
+- Shell edits are found only in the forms listed above. A script, `node -e`, `python -c`, `cp`, `mv`, `git checkout` or a code generator can change code without the gate seeing an edit.
 - The gate checks that a test command passed, not that it tests the code you changed. A narrow test that exits 0 satisfies it.
 - When tests run on another machine, the gate can't tell whether that copy of the code is current.
 - Every MCP tool call starts the gate briefly, even for tools you didn't list, which adds a little latency.

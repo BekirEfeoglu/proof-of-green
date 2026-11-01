@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Shell commands that write a code file now count as edits, on Claude Code and Codex: `>` and `>>` redirections, `tee`, `sed -i`, `perl -i`, and PowerShell's `Set-Content`, `Add-Content` and `Out-File`. Before, an agent could change code with `sed -i` and stop without a test. Other ways of writing files through the shell are listed under Known limits.
+
 ## 0.4.0 (2026-11-01)
 
 - `proof-of-green uninstall codex` removes the two Codex hooks that `install codex` added and the copied gate. Other hooks, the ledgers and Codex's `config.toml` are left as they are. Running it again changes nothing.

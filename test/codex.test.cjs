@@ -360,3 +360,12 @@ test('a tool listed in both testTools and editTools is treated as a test tool', 
   s.send('post-tool', { tool_name: EDIT_MCP, tool_input: { path: 'src/a.ts' }, tool_response: mcpText(0) });
   assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command']);
 });
+
+test('a Bash command that writes a code file records an edit, also inside a shell wrapper', (t) => {
+  const s = setup(t);
+  s.send('post-tool', bash(['bash', '-lc', "sed -i 's/a/b/' src/a.js"], 'c1'));
+  s.send('post-tool', bash('echo x > src/b.py', 'c2'));
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
+  assert.deepEqual(edits, [path.join(s.project, 'src', 'a.js'), path.join(s.project, 'src', 'b.py')]);
+  assert.equal(s.send('stop', { transcript_path: null }).decision, 'block');
+});
