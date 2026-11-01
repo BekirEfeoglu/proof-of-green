@@ -143,12 +143,13 @@ const baseName = (p) => p.replace(/[\\/]+$/, '').replace(/^.*[\\/]/, '');
 const inDir = (dir, src) => `${dir.replace(/[\\/]+$/, '')}/${baseName(src)}`;
 
 // Where copying or moving `sources` to `dest` writes. A lone destination may be a directory, which
-// only the file system knows after the command ran: that candidate carries ifDir for the caller.
+// only the file system knows after the command ran: the file candidate carries unlessDir and the
+// into-the-directory candidate carries ifDir, and the caller keeps the one that applies.
 function placed(sources, dest, intoDir) {
   if (dest.dynamic) return [];
   const known = sources.filter((s) => !s.dynamic);
   if (intoDir) return known.map((s) => ({ path: inDir(dest.text, s.text) }));
-  return [{ path: dest.text }, ...known.map((s) => ({ path: inDir(dest.text, s.text), ifDir: dest.text }))];
+  return [{ path: dest.text, unlessDir: dest.text }, ...known.map((s) => ({ path: inDir(dest.text, s.text), ifDir: dest.text }))];
 }
 
 function copyMoveWrites(args, isMove) {
@@ -164,6 +165,17 @@ function copyMoveWrites(args, isMove) {
     else if (a.startsWith('--target-directory=')) target = { text: a.slice(19), dynamic: false };
     else if (a === '-S' || a === '--suffix') i++;
     else if (a === '-T' || a === '--no-target-directory') noTarget = true;
+    else if (/^-[A-Za-z]{2,}$/.test(a)) {
+      // A cluster of short flags (`-rt lib`, `-tlib`, `-fT`): t and S take the rest or the next word.
+      for (let j = 1; j < a.length; j++) {
+        if (a[j] === 'T') noTarget = true;
+        else if (a[j] === 't' || a[j] === 'S') {
+          const value = a.slice(j + 1) ? { text: a.slice(j + 1), dynamic: false } : args[++i] || null;
+          if (a[j] === 't') target = value;
+          break;
+        }
+      }
+    }
   }
   let sources = operands;
   let writes;
@@ -180,13 +192,21 @@ function copyMoveWrites(args, isMove) {
 }
 
 const PS_ITEM_SWITCHES = new Set(['-force', '-recurse', '-passthru', '-whatif', '-confirm', '-container']);
+const PS_ITEM_PARAMS = ['-path', '-literalpath', '-destination', '-filter', '-include', '-exclude', '-credential',
+  '-tosession', '-fromsession', ...PS_ITEM_SWITCHES];
+// PowerShell accepts any unambiguous prefix of a parameter name (`-Dest`).
+function psParam(a) {
+  if (PS_ITEM_PARAMS.includes(a)) return a;
+  const hits = a.length > 2 ? PS_ITEM_PARAMS.filter((p) => p.startsWith(a)) : [];
+  return hits.length === 1 ? hits[0] : a;
+}
 
 function psCopyMoveWrites(args, isMove) {
   let source = null;
   let dest = null;
   const positional = [];
   for (let i = 0; i < args.length; i++) {
-    const a = args[i].dynamic ? '' : args[i].text.toLowerCase();
+    const a = args[i].dynamic ? '' : psParam(args[i].text.toLowerCase());
     if (a === '-path' || a === '-literalpath') source = args[++i] || null;
     else if (a === '-destination') dest = args[++i] || null;
     else if (a.startsWith('-')) { if (!PS_ITEM_SWITCHES.has(a)) i++; } else positional.push(args[i]);
@@ -198,7 +218,10 @@ function psCopyMoveWrites(args, isMove) {
   return [...removed, ...placed([source], dest, /[\\/]$/.test(dest.text))];
 }
 
-// Returns { path, ifDir? } for each file the command writes.
+const PS_COPY = new Set(['copy-item', 'cpi', 'copy']);
+const PS_MOVE = new Set(['move-item', 'mi', 'move']);
+
+// Returns { path, ifDir?, unlessDir? } for each file the command writes.
 function commandWrites(words) {
   const argv = words.slice();
   while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
@@ -206,7 +229,7 @@ function commandWrites(words) {
   const name = argv[0].text.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase();
   const args = argv.slice(1);
   if (name === 'cp' || name === 'mv') return copyMoveWrites(args, name === 'mv');
-  if (name === 'copy-item' || name === 'move-item') return psCopyMoveWrites(args, name === 'move-item');
+  if (PS_COPY.has(name) || PS_MOVE.has(name)) return psCopyMoveWrites(args, PS_MOVE.has(name));
   let files = [];
   if (name === 'tee') files = args.filter((a) => !a.text.startsWith('-'));
   else if (name === 'sed') files = sedFiles(args);
@@ -215,9 +238,9 @@ function commandWrites(words) {
   return files.filter((w) => !w.dynamic).map((w) => ({ path: w.text }));
 }
 
-// Each write as { path, end, ifDir? }: end is the offset where the writing command ends (its
-// separator, or the command's length), so a caller can tell what runs after the write. ifDir:
-// the write happened only if that path is a directory (`cp a.js lib`).
+// Each write as { path, end, ifDir?, unlessDir? }: end is the offset where the writing command ends
+// (its separator, or the command's length), so a caller can tell what runs after the write. ifDir:
+// the write happened only if that path is a directory (`cp a.js lib`); unlessDir: only if it is not.
 function shellEdits(command) {
   if (typeof command !== 'string' || !command) return [];
   const tokens = tokenize(command);
@@ -230,7 +253,10 @@ function shellEdits(command) {
     for (const w of pending) {
       const old = edits.findIndex((e) => e.path === w.path);
       if (old >= 0) edits.splice(old, 1);
-      edits.push(w.ifDir === undefined ? { path: w.path, end: at } : { path: w.path, end: at, ifDir: w.ifDir });
+      const e = { path: w.path, end: at };
+      if (w.ifDir !== undefined) e.ifDir = w.ifDir;
+      if (w.unlessDir !== undefined) e.unlessDir = w.unlessDir;
+      edits.push(e);
     }
     words = [];
     pending = [];

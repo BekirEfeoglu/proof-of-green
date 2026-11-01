@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { suggestTestCommand, isTestCommand } = require('../core/detect.cjs');
+const { suggestTestCommand, isTestCommand, isMaskedTest } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { shellEdits } = require('../core/shelledits.cjs');
 const { decide } = require('../core/policy.cjs');
@@ -66,19 +66,23 @@ function isDirectory(p) {
 
 // Pushes the command record together with the code files its script writes. The edits come
 // first only when a test command runs after the last write (`sed -i a.js && npm test`);
-// otherwise (`npm test && sed -i a.js`) the command's result cannot cover them.
-// A file is an edit even when the command failed or runs in the background.
+// otherwise (`npm test && sed -i a.js`) the command's result cannot cover them. A masked test
+// after the write (`sed -i a.js && npm test | tail`) also comes after the edits, so the block
+// reason can name it. A file is an edit even when the command failed or runs in the background.
 function pushShellCommand(out, script, cwd, config, record) {
   const edits = [];
   let lastEnd = -1;
   for (const e of shellEdits(script)) {
     if (e.ifDir !== undefined && !isDirectory(path.resolve(cwd, e.ifDir))) continue;
+    if (e.unlessDir !== undefined && isDirectory(path.resolve(cwd, e.unlessDir))) continue;
     const abs = path.resolve(cwd, e.path);
     if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) continue;
     edits.push({ kind: 'edit', path: abs });
     lastEnd = Math.max(lastEnd, e.end);
   }
-  const testAfter = edits.length > 0 && record.isTest === true && isTestCommand(script.slice(lastEnd), config.testPatterns);
+  const rest = edits.length > 0 ? script.slice(lastEnd) : '';
+  const testAfter = (record.isTest === true && isTestCommand(rest, config.testPatterns))
+    || (record.masked === true && isMaskedTest(rest, config.testPatterns));
   if (testAfter) out.push(...edits, record);
   else out.push(record, ...edits);
 }

@@ -2,11 +2,29 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Options before the script name (`--prefix api`, `-w pkg`, `--filter x`, `-r`); a value may follow
-// a flag as long as it is not the script name itself. The flag name starts with a word character,
-// so `--a` has one parse; `-{1,2}[\w-]+` would backtrack exponentially on long option lists.
-const PM_OPTIONS = String.raw`(?:\s+-{1,2}\w[\w-]*(?:=\S+|\s+(?!(?:run\s+)?test\b)[^\s-]\S*)?)*`;
+// Options before the script name. Only the listed flags take a separate value (`--prefix api`,
+// `-w pkg`, `--filter x`); every other flag is a switch (`-r`, `-g`, `--silent`). A value is never
+// read as the script name, so `npm --prefix test install` is not a test. The two alternatives
+// cannot match the same flag, and a flag name starts with a word character, so long option lists
+// do not backtrack exponentially.
+const PM_VALUE_FLAG = String.raw`(?:--(?:prefix|workspace|dir|filter|cwd)|-[wCF])`;
+const PM_OPTIONS = String.raw`(?:\s+(?:${PM_VALUE_FLAG}(?:=\S+|\s+\S+)|-(?!-?(?:prefix|workspace|dir|filter|cwd|[wCF])(?=[\s=]|$))-?\w[\w-]*(?:=\S+)?))*`;
 const YARN_WORKSPACE = String.raw`(?:\s+workspace\s+\S+|\s+workspaces\s+foreach(?:\s+-\S+)*)?`;
+// Maven and Gradle flags that take a separate value (`-T 4`, `-pl mod`, `-p sub`).
+const JVM_VALUE_FLAG = String.raw`(?:-(?:T|pl|f|p|P|s|rf|b)|--(?:threads|projects|file|project-dir|settings|build-file))`;
+const JVM_OPTIONS = String.raw`(?:\s+(?:${JVM_VALUE_FLAG}\s+\S+|-(?!(?:x|T|pl|f|p|P|s|rf|b)(?=\s|$))\S+|clean))*`;
+
+// Forms of a test command that run no tests: skip flags, dry runs, listings, non-test sessions.
+const NO_TESTS_RUN = [
+  /(?:^|\s)-DskipTests(?:=true)?(?=\s|$)/,
+  /(?:^|\s)-Dmaven\.test\.skip(?:=true)?(?=\s|$)/,
+  /^(?:gradle|\.[\\/]gradlew)\b.*\s(?:--dry-run|-m|-x\s+\S*[Tt]est\S*)(?=\s|$)/,
+  /^tox\b.*\s(?:--notest|-l|-a|--listenvs(?:-all)?|--help|-h|--version)(?=\s|$)/,
+  /^nox\b.*\s(?:--list|-l|--help|-h|--version)(?=\s|$)/,
+  /^(?:tox|nox)\b.*\s(?:-e|-s|--sessions?)(?:\s+|=)(?!py|tests?\b)/,
+  /^ctest\b.*\s(?:-N|--show-only\S*)(?=\s|$)/,
+  /^swift\s+test\b.*\s--list-tests(?=\s|$)/,
+];
 
 const BUILTIN_TEST_PATTERNS = [
   new RegExp(String.raw`^(?:npm|pnpm|yarn|bun)${PM_OPTIONS}${YARN_WORKSPACE}\s+(?:run\s+)?test(?:[:_-]\S+)?(?:\s|$)`),
@@ -19,8 +37,9 @@ const BUILTIN_TEST_PATTERNS = [
   /^dotnet\s+test\b/,
   /^deno\s+test\b/,
   /^node\s+--test(?:\s|$)/,
-  // Flags and `clean` may come first, and a task path such as `:app:test`; `-x test` excludes tests.
-  /^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))(?:\s+(?:-(?!x\b)\S+|clean))*\s+(?:\S*:)?(?:test|verify|check)\b/,
+  // Flags and `clean` may come first, and a task path such as `:app:test` or a variant task such as
+  // `testDebugUnitTest`; `test-compile` and `testClasses` only compile.
+  new RegExp(String.raw`^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))${JVM_OPTIONS}\s+(?:\S*:)?(?:test(?:\w*Test)?|verify|check)(?=\s|$)`),
   /^make\s+(?:test|check)\b/,
   /^(?:bundle\s+exec\s+)?(?:rspec|phpunit)\b/,
   /^(?:bundle\s+exec\s+)?(?:rake|(?:bin[\\/])?rails)\s+test\b/,
@@ -56,7 +75,7 @@ function split(command) {
 }
 
 const segments = (command) => split(command).filter((_, i) => i % 2 === 0);
-const isTestSegment = (seg, patterns) => patterns.some((p) => p.test(seg));
+const isTestSegment = (seg, patterns) => !NO_TESTS_RUN.some((p) => p.test(seg)) && patterns.some((p) => p.test(seg));
 
 // True when a forced-success form appears, or when the first test segment's exit code
 // may not be the command's: anything but && after it (| only while set -o pipefail is on).
