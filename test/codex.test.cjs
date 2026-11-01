@@ -385,3 +385,11 @@ test('a Codex test command with a hidden exit code is recorded as masked', (t) =
   assert.equal(s.ledger().records.at(-1).masked, true);
   assert.match(s.send('stop', { transcript_path: null }).reason, /exit code was hidden/);
 });
+
+test('a listed MCP tool running a test with a hidden exit code is recorded as masked', (t) => {
+  const s = setup(t, listed);
+  s.send('post-tool', patchTool());
+  s.send('post-tool', mcp(mcpText(0), 'npm test; echo done'));
+  assert.equal(s.ledger().records.at(-1).masked, true);
+  assert.match(s.send('stop', { transcript_path: null }).reason, /exit code was hidden/);
+});
