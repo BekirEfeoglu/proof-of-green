@@ -568,3 +568,17 @@ test('status says the gate is disabled when PROOF_OF_GREEN=off', (t) => {
   run(['status'], { ...statusIo(homeDir, out), env: { PROOF_OF_GREEN: 'off' } });
   assert.deepEqual(out, ['Gate disabled by config']);
 });
+
+test('status marks a test command whose exit code was hidden', (t) => {
+  const homeDir = tempHome(t);
+  writeStatusLedger(homeDir, 'm.json', { turn: '1', nextSeq: 3, records: [
+    { seq: 1, turn: '1', kind: 'edit', path: 'a.js' },
+    { seq: 2, turn: '1', kind: 'command', command: 'npm test | tail', isTest: false, masked: true, result: 'pass' },
+  ] });
+  const out = [];
+  run(['status'], statusIo(homeDir, out));
+  assert.match(out.join('\n'), /npm test \| tail \[test, exit code hidden\] result=pass/);
+  const json = [];
+  run(['status', '--json'], statusIo(homeDir, json));
+  assert.equal(JSON.parse(json.join('\n')).commands[0].masked, true);
+});
