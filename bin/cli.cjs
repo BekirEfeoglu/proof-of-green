@@ -251,7 +251,7 @@ function status({ homeDir = os.homedir(), env = process.env, platform = process.
   }
   const commands = records
     .filter((r) => r && r.kind === 'command')
-    .map((r) => ({ command: r.command, isTest: r.isTest === true, result: r.result, via: r.via }));
+    .map((r) => ({ command: r.command, isTest: r.isTest === true, result: r.result, via: r.via, ...(r.masked === true ? { masked: true } : {}) }));
   return {
     ledger: found.file,
     modified: new Date(found.mtimeMs).toISOString(),
@@ -277,7 +277,7 @@ function formatStatus(r) {
     `Turn: ${r.turn}`,
     `Edits this turn: ${edits}`,
     r.commands.length ? 'Commands this turn:' : 'Commands this turn: none',
-    ...r.commands.map((c) => `  ${c.command} [${c.isTest ? 'test' : 'not a test'}] result=${c.result || 'none'}${c.via ? ` via=${c.via}` : ''}`),
+    ...r.commands.map((c) => `  ${c.command} [${c.isTest ? 'test' : c.masked ? 'test, exit code hidden' : 'not a test'}] result=${c.result || 'none'}${c.via ? ` via=${c.via}` : ''}`),
     verdict,
     ...(r.note ? [r.note] : []),
   ].join('\n');
