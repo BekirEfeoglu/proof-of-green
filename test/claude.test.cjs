@@ -658,3 +658,12 @@ test('deleting a code file records an edit that blocks the stop', (t) => {
   assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path), [path.join(s.project, 'src', 'old.js')]);
   assert.equal(s.send('stop', {}).decision, 'block');
 });
+
+test('a listed MCP tool running a test with a hidden exit code gets the hidden-exit-code reason', (t) => {
+  const s = setup(t, mcpConfig);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Edit', tool_input: { file_path: 'src/a.ts' } });
+  s.send('post-tool', { tool_name: MCP, tool_input: { komut: 'npm test | tail -5' }, tool_response: mcpResponse(0) });
+  assert.equal(s.ledger().records[1].masked, true);
+  assert.match(s.send('stop', {}).reason, /exit code was hidden: `npm test \| tail -5`/);
+});
