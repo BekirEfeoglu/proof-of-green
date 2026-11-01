@@ -172,8 +172,25 @@ test('doctor detects the Claude plugin and last errors', (t) => {
   assert.equal(doctor(o).claude.installed, true);
   const dir = doctor(o).ledgerDirs[0];
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'errors.log'), 'a\nb\nc\nd\ne\nf\n\n');
-  assert.deepEqual(doctor(o).lastErrors, ['b', 'c', 'd', 'e', 'f']);
+  const entries = ['a', 'b', 'c', 'd', 'e', 'f'].map((m, i) => `2026-10-31T0${i}:00:00.000Z Error: ${m}\n    at x (y.cjs:1:1)`);
+  fs.writeFileSync(path.join(dir, 'errors.log'), entries.join('\n') + '\n\n');
+  assert.deepEqual(doctor(o).lastErrors, entries.slice(1).map((e) => e.split('\n')[0]));
+});
+
+test('doctor shows the newest error entries across ledger dirs, one line each', (t) => {
+  const homeDir = tempHome(t);
+  const o = opts(homeDir);
+  const first = doctor(o).ledgerDirs[0];
+  const second = path.join(homeDir, '.claude', 'plugins', 'data', 'proof-of-green-proof-of-green', 'ledgers');
+  for (const d of [first, second]) fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(first, 'errors.log'),
+    '2026-10-31T21:00:00.000Z TypeError: old\n    at a (b.cjs:1:1)\n2026-11-01T09:00:00.000Z Error: newest\n    at c (d.cjs:2:2)\n');
+  fs.writeFileSync(path.join(second, 'errors.log'), '2026-11-01T08:00:00.000Z Error: middle\n    at e (f.cjs:3:3)\n');
+  assert.deepEqual(doctor(o).lastErrors, [
+    '2026-10-31T21:00:00.000Z TypeError: old',
+    '2026-11-01T08:00:00.000Z Error: middle',
+    '2026-11-01T09:00:00.000Z Error: newest',
+  ]);
 });
 
 test('run prints usage and fails on unknown commands', () => {
