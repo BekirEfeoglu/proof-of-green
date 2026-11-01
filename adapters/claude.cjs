@@ -2,6 +2,7 @@
 const path = require('node:path');
 const { isTestCommand } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
+const { shellEditPaths } = require('../core/shelledits.cjs');
 const { readLedger, appendRecord, startTurn } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
 const { stopResponse, parentRecords } = require('./common.cjs');
@@ -56,6 +57,12 @@ function recordTool(out, payload, cwd, config, result) {
   }
   if (SHELL_TOOLS.has(tool)) {
     if (typeof input.command !== 'string') return false;
+    // A file the command writes is an edit even when the command failed or runs in the background.
+    // It comes before the command, so a test later in the same command counts as after it.
+    for (const p of shellEditPaths(input.command)) {
+      const abs = path.resolve(cwd, p);
+      if (isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) out.push({ kind: 'edit', path: abs });
+    }
     out.push({
       kind: 'command',
       command: input.command,
