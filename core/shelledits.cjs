@@ -142,14 +142,17 @@ function psPath(args) {
 const baseName = (p) => p.replace(/[\\/]+$/, '').replace(/^.*[\\/]/, '');
 const inDir = (dir, src) => `${dir.replace(/[\\/]+$/, '')}/${baseName(src)}`;
 
-// Where copying or moving `sources` to `dest` writes. A lone destination may be a directory, which
-// only the file system knows after the command ran: the file candidate carries unlessDir and the
-// into-the-directory candidate carries ifDir, and the caller keeps the one that applies.
+// Where copying or moving `sources` to `dest` writes. Whether a lone destination was an existing
+// directory only the file system knows after the command ran: the copy is `dest/<source name>`
+// when that exists (ifDir), else `dest` itself (unlessExists). The caller keeps what applies.
 function placed(sources, dest, intoDir) {
   if (dest.dynamic) return [];
   const known = sources.filter((s) => !s.dynamic);
   if (intoDir) return known.map((s) => ({ path: inDir(dest.text, s.text) }));
-  return [{ path: dest.text, unlessDir: dest.text }, ...known.map((s) => ({ path: inDir(dest.text, s.text), ifDir: dest.text }))];
+  const self = known.length === 1 && sources.length === 1
+    ? { path: dest.text, unlessExists: inDir(dest.text, known[0].text) }
+    : { path: dest.text };
+  return [self, ...known.map((s) => ({ path: inDir(dest.text, s.text), ifDir: dest.text }))];
 }
 
 function copyMoveWrites(args, isMove) {
@@ -221,7 +224,7 @@ function psCopyMoveWrites(args, isMove) {
 const PS_COPY = new Set(['copy-item', 'cpi', 'copy']);
 const PS_MOVE = new Set(['move-item', 'mi', 'move']);
 
-// Returns { path, ifDir?, unlessDir? } for each file the command writes.
+// Returns { path, ifDir?, unlessExists? } for each file the command writes.
 function commandWrites(words) {
   const argv = words.slice();
   while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
@@ -238,9 +241,9 @@ function commandWrites(words) {
   return files.filter((w) => !w.dynamic).map((w) => ({ path: w.text }));
 }
 
-// Each write as { path, end, ifDir?, unlessDir? }: end is the offset where the writing command ends
+// Each write as { path, end, ifDir?, unlessExists? }: end is the offset where the writing command ends
 // (its separator, or the command's length), so a caller can tell what runs after the write. ifDir:
-// the write happened only if that path is a directory (`cp a.js lib`); unlessDir: only if it is not.
+// the write happened only if that path is a directory (`cp a.js lib`); unlessExists: only if that path does not exist.
 function shellEdits(command) {
   if (typeof command !== 'string' || !command) return [];
   const tokens = tokenize(command);
@@ -255,7 +258,7 @@ function shellEdits(command) {
       if (old >= 0) edits.splice(old, 1);
       const e = { path: w.path, end: at };
       if (w.ifDir !== undefined) e.ifDir = w.ifDir;
-      if (w.unlessDir !== undefined) e.unlessDir = w.unlessDir;
+      if (w.unlessExists !== undefined) e.unlessExists = w.unlessExists;
       edits.push(e);
     }
     words = [];

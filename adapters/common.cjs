@@ -64,6 +64,31 @@ function isDirectory(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 
+const WALK_MAX_ENTRIES = 2000;
+const WALK_MAX_FILES = 50;
+const WALK_SKIP = new Set(['node_modules', '.git']);
+
+// Code files under a directory a command copied or moved (`cp -R core copied`), bounded so a large
+// tree cannot slow the hook. One file is enough for the decision; the cap keeps the ledger small.
+function codeFilesUnder(dir, config) {
+  const out = [];
+  const stack = [dir];
+  let seen = 0;
+  while (stack.length && seen < WALK_MAX_ENTRIES && out.length < WALK_MAX_FILES) {
+    const current = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    for (const ent of entries) {
+      if (++seen > WALK_MAX_ENTRIES || out.length >= WALK_MAX_FILES) break;
+      const p = path.join(current, ent.name);
+      if (ent.isDirectory()) { if (!WALK_SKIP.has(ent.name)) stack.push(p); } else if (isCodeFile(p, codeOpts(config))) out.push(p);
+    }
+  }
+  return out;
+}
+
+const codeOpts = (config) => ({ root: config.root, include: config.include, exclude: config.exclude });
+
 // Pushes the command record together with the code files its script writes. The edits come
 // first only when a test command runs after the last write (`sed -i a.js && npm test`);
 // otherwise (`npm test && sed -i a.js`) the command's result cannot cover them. A masked test
@@ -74,10 +99,11 @@ function pushShellCommand(out, script, cwd, config, record) {
   let lastEnd = -1;
   for (const e of shellEdits(script)) {
     if (e.ifDir !== undefined && !isDirectory(path.resolve(cwd, e.ifDir))) continue;
-    if (e.unlessDir !== undefined && isDirectory(path.resolve(cwd, e.unlessDir))) continue;
+    if (e.unlessExists !== undefined && fs.existsSync(path.resolve(cwd, e.unlessExists))) continue;
     const abs = path.resolve(cwd, e.path);
-    if (!isCodeFile(abs, { root: config.root, include: config.include, exclude: config.exclude })) continue;
-    edits.push({ kind: 'edit', path: abs });
+    const files = isDirectory(abs) ? codeFilesUnder(abs, config) : isCodeFile(abs, codeOpts(config)) ? [abs] : [];
+    if (files.length === 0) continue;
+    for (const f of files) edits.push({ kind: 'edit', path: f });
     lastEnd = Math.max(lastEnd, e.end);
   }
   const rest = edits.length > 0 ? script.slice(lastEnd) : '';

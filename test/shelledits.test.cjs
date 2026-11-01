@@ -112,37 +112,37 @@ test('shellEdits gives where the writing command ends', () => {
 const writes = (command) => shellEdits(command).map(({ end, ...rest }) => rest);
 
 test('cp writes its destination; into a directory it writes dir/<source name>', () => {
-  assert.deepEqual(writes('cp a.js b.js'), [{ path: 'b.js', unlessDir: 'b.js' }, { path: 'b.js/a.js', ifDir: 'b.js' }]);
+  assert.deepEqual(writes('cp a.js b.js'), [{ path: 'b.js', unlessExists: 'b.js/a.js' }, { path: 'b.js/a.js', ifDir: 'b.js' }]);
   assert.deepEqual(writes('cp -r x.js y.ts lib/'), [{ path: 'lib/x.js' }, { path: 'lib/y.ts' }]);
   assert.deepEqual(writes('cp x.js y.ts lib'), [{ path: 'lib/x.js' }, { path: 'lib/y.ts' }]);
   assert.deepEqual(writes('cp -t lib a.js'), [{ path: 'lib/a.js' }]);
   assert.deepEqual(writes('cp --target-directory=lib a.js'), [{ path: 'lib/a.js' }]);
   assert.deepEqual(writes('cp -T a.js b.js'), [{ path: 'b.js' }]);
   assert.deepEqual(writes('cp a.js'), []);
-  assert.deepEqual(writes('cp "$SRC" b.js'), [{ path: 'b.js', unlessDir: 'b.js' }]);
+  assert.deepEqual(writes('cp "$SRC" b.js'), [{ path: 'b.js' }]);
   assert.deepEqual(writes('cp a.js "$DEST"'), []);
 });
 
 test('mv also removes its sources', () => {
-  assert.deepEqual(writes('mv old.js new.js'), [{ path: 'old.js' }, { path: 'new.js', unlessDir: 'new.js' }, { path: 'new.js/old.js', ifDir: 'new.js' }]);
+  assert.deepEqual(writes('mv old.js new.js'), [{ path: 'old.js' }, { path: 'new.js', unlessExists: 'new.js/old.js' }, { path: 'new.js/old.js', ifDir: 'new.js' }]);
   assert.deepEqual(writes('mv -f a.py b.py pkg/'), [{ path: 'a.py' }, { path: 'b.py' }, { path: 'pkg/a.py' }, { path: 'pkg/b.py' }]);
 });
 
 test('PowerShell Copy-Item and Move-Item write their destination', () => {
-  assert.deepEqual(writes('Copy-Item -Path a.ts -Destination b.ts'), [{ path: 'b.ts', unlessDir: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
-  assert.deepEqual(writes('Move-Item a.ts b.ts -Force'), [{ path: 'a.ts' }, { path: 'b.ts', unlessDir: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('Copy-Item -Path a.ts -Destination b.ts'), [{ path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('Move-Item a.ts b.ts -Force'), [{ path: 'a.ts' }, { path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
 });
 
 test('cp and mv short flag clusters and attached values', () => {
   assert.deepEqual(writes('cp -rt lib a.js'), [{ path: 'lib/a.js' }]);
   assert.deepEqual(writes('cp -tlib a.js'), [{ path: 'lib/a.js' }]);
   assert.deepEqual(writes('mv -fT a.js b.js'), [{ path: 'a.js' }, { path: 'b.js' }]);
-  assert.deepEqual(writes('cp -rf a.js b.js'), [{ path: 'b.js', unlessDir: 'b.js' }, { path: 'b.js/a.js', ifDir: 'b.js' }]);
+  assert.deepEqual(writes('cp -rf a.js b.js'), [{ path: 'b.js', unlessExists: 'b.js/a.js' }, { path: 'b.js/a.js', ifDir: 'b.js' }]);
 });
 
 test('PowerShell aliases and abbreviated parameters for copy and move', () => {
-  assert.deepEqual(writes('copy a.ts b.ts'), [{ path: 'b.ts', unlessDir: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
-  assert.deepEqual(writes('cpi a.ts -Dest b.ts'), [{ path: 'b.ts', unlessDir: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('copy a.ts b.ts'), [{ path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('cpi a.ts -Dest b.ts'), [{ path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
   assert.deepEqual(writes('mi -Pat a.ts -Destination lib/'), [{ path: 'a.ts' }, { path: 'lib/a.ts' }]);
-  assert.deepEqual(writes('move a.ts b.ts'), [{ path: 'a.ts' }, { path: 'b.ts', unlessDir: 'b.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
+  assert.deepEqual(writes('move a.ts b.ts'), [{ path: 'a.ts' }, { path: 'b.ts', unlessExists: 'b.ts/a.ts' }, { path: 'b.ts/a.ts', ifDir: 'b.ts' }]);
 });

@@ -565,3 +565,40 @@ test('cp onto a path that is a directory does not record that directory as a fil
   s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp a.ts lib.js' } });
   assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path), [path.join(s.project, 'lib.js', 'a.ts')]);
 });
+
+test('a recursive copy records the code files it put under the new directory', (t) => {
+  const s = setup(t);
+  fs.mkdirSync(path.join(s.project, 'copied-core', 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(s.project, 'copied-core', 'a.cjs'), '');
+  fs.writeFileSync(path.join(s.project, 'copied-core', 'sub', 'b.ts'), '');
+  fs.writeFileSync(path.join(s.project, 'copied-core', 'notes.md'), '');
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp -R core copied-core' } });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => path.relative(s.project, r.path)).sort();
+  assert.deepEqual(edits, [path.join('copied-core', 'a.cjs'), path.join('copied-core', 'sub', 'b.ts')]);
+  assert.equal(s.send('stop', {}).decision, 'block');
+});
+
+test('a directory copied into an existing directory records only the files under the copy', (t) => {
+  const s = setup(t);
+  fs.mkdirSync(path.join(s.project, 'dest', 'core'), { recursive: true });
+  fs.writeFileSync(path.join(s.project, 'dest', 'other.cjs'), '');
+  fs.writeFileSync(path.join(s.project, 'dest', 'core', 'x.cjs'), '');
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'mv core dest' } });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => path.relative(s.project, r.path));
+  assert.deepEqual(edits, [path.join('dest', 'core', 'x.cjs')]);
+});
+
+test('a copied directory tree is walked with a bound and skips node_modules', (t) => {
+  const s = setup(t);
+  const root = path.join(s.project, 'big');
+  fs.mkdirSync(path.join(root, 'node_modules', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules', 'x', 'i.js'), '');
+  for (let i = 0; i < 80; i++) fs.writeFileSync(path.join(root, `f${i}.js`), '');
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp -R src big' } });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
+  assert.equal(edits.length, 50);
+  assert.ok(edits.every((p) => !p.includes('node_modules')));
+});
