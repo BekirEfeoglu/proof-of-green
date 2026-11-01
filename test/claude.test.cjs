@@ -481,13 +481,21 @@ test('a running subagent without edits gives no note', (t) => {
   assert.deepEqual(s.send('stop', {}), {});
 });
 
-test('a shell command that writes a code file records an edit before the command', (t) => {
+test('a shell command that writes a code file records an edit; without a later test it follows the command', (t) => {
   const s = setup(t);
   s.send('user-prompt', {});
   s.send('post-tool', { tool_name: 'Bash', tool_input: { command: "sed -i 's/a/b/' src/a.js && echo x > notes.txt" } });
   const records = s.ledger().records;
-  assert.deepEqual(records.map((r) => r.kind), ['edit', 'command']);
-  assert.equal(records[0].path, path.join(s.project, 'src', 'a.js'));
+  assert.deepEqual(records.map((r) => r.kind), ['command', 'edit']);
+  assert.equal(records[1].path, path.join(s.project, 'src', 'a.js'));
+});
+
+test('a shell edit followed by a test in the same command is recorded before the command', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: "sed -i 's/a/b/' src/a.js && npm test > test.log" } });
+  assert.deepEqual(s.ledger().records.map((r) => r.kind), ['edit', 'command']);
+  assert.deepEqual(s.send('stop', {}), {});
 });
 
 test('a shell edit without a later test blocks the stop', (t) => {
@@ -512,4 +520,12 @@ test('a failed or background shell command still records its edit', (t) => {
   s.send('post-tool-failure', { tool_name: 'Bash', tool_input: { command: 'node gen.js > src/a.py' } });
   s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'node gen.js > src/b.py', run_in_background: true } });
   assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit').map((r) => path.basename(r.path)), ['a.py', 'b.py']);
+});
+
+test('a test that runs before a shell edit in the same command does not cover it', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: "npm test && sed -i 's/a/b/' src/a.js" } });
+  assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command', 'edit']);
+  assert.equal(s.send('stop', {}).decision, 'block');
 });

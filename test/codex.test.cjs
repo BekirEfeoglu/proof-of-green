@@ -369,3 +369,11 @@ test('a Bash command that writes a code file records an edit, also inside a shel
   assert.deepEqual(edits, [path.join(s.project, 'src', 'a.js'), path.join(s.project, 'src', 'b.py')]);
   assert.equal(s.send('stop', { transcript_path: null }).decision, 'block');
 });
+
+test('a test that runs before a shell edit in the same Bash call does not cover it', (t) => {
+  const s = setup(t);
+  s.send('post-tool', bash(['bash', '-lc', "npm test && sed -i 's/a/b/' src/a.js"], 'c1'));
+  assert.deepEqual(s.ledger().records.map((r) => r.kind), ['command', 'edit']);
+  const rollout = s.rollout([{ call_id: 'c1', command: ['bash', '-lc', "npm test && sed -i 's/a/b/' src/a.js"], exit_code: 0 }]);
+  assert.equal(s.send('stop', { transcript_path: rollout }).decision, 'block');
+});

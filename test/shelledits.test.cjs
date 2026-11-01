@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { shellEditPaths } = require('../core/shelledits.cjs');
+const { shellEditPaths, shellEdits } = require('../core/shelledits.cjs');
 
 const cases = (list) => {
   for (const [command, want] of list) assert.deepEqual(shellEditPaths(command), want, command);
@@ -89,4 +89,22 @@ test('non-strings and plain commands yield nothing', () => {
   assert.deepEqual(shellEditPaths(undefined), []);
   assert.deepEqual(shellEditPaths(''), []);
   cases([['npm test', []], ['git status', []], ['if [ $a -gt 3 ]; then echo hi; fi', []]]);
+});
+
+test('a dynamic script or option keeps the static file operands', () => {
+  cases([
+    ['sed -i "$script" src/a.js', ['src/a.js']],
+    ["sed -i 's/a/b/' \"$f\" b.js", ['b.js']],
+    ['perl -pi -e "$expr" x.pl', ['x.pl']],
+    ['tee "$LOG" a.js', ['a.js']],
+    ['Set-Content -Path $p -Value x', []],
+  ]);
+});
+
+test('shellEdits gives where the writing command ends', () => {
+  const cmd = "sed -i 's/a/b/' a.js && npm test";
+  assert.deepEqual(shellEdits(cmd), [{ path: 'a.js', end: cmd.indexOf('&&') }]);
+  assert.deepEqual(shellEdits('echo x > b.py'), [{ path: 'b.py', end: 13 }]);
+  const doc = "cat > a.js <<'EOF'\nnpm test\nEOF\nnpm test";
+  assert.equal(doc.slice(shellEdits(doc)[0].end), '\nnpm test');
 });
