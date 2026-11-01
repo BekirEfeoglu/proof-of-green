@@ -650,3 +650,11 @@ test('git apply with a heredoc patch records its files before a test in the same
   assert.deepEqual(records.map((r) => r.kind), ['edit', 'command']);
   assert.equal(records[0].path, path.join(s.project, 'src', 'a.ts'));
 });
+
+test('deleting a code file records an edit that blocks the stop', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'rm src/old.js' } });
+  assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path), [path.join(s.project, 'src', 'old.js')]);
+  assert.equal(s.send('stop', {}).decision, 'block');
+});
