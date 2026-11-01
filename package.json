@@ -1,7 +1,7 @@
 {
   "name": "proof-of-green",
   "version": "0.5.0",
-  "description": "Stop-hook gate for Claude Code and Codex CLI that blocks completion claims without a passing test run.",
+  "description": "Blocks Claude Code and Codex CLI from ending a turn when code changed and no test passed after the last change.",
   "license": "MIT",
   "engines": { "node": ">=18" },
   "bin": { "proof-of-green": "bin/cli.cjs" },
