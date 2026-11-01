@@ -70,11 +70,12 @@ Any error inside the gate allows the stop and is appended to `errors.log` next t
 A shell command counts when it starts a built-in test runner:
 
 - `npm`, `pnpm`, `yarn` or `bun` with `test` or `run test`, `npm t`, and scripts whose name starts with `test` followed by `:`, `-` or `_` (`test:unit`, `test-e2e`). Options may come first (`npm --prefix api test`, `npm -w pkg test`, `pnpm -C api test`, `pnpm --filter web test`, `pnpm -r test`), and so may `yarn workspace <name>` or `yarn workspaces foreach`
-- `vitest`, `jest`, `mocha` or `playwright test` through `npx`, `bunx`, `pnpm`, `pnpm exec` or `yarn`
+- `vitest`, `jest`, `mocha`, `ava`, `tap`, `playwright test`, `cypress run`, `karma start` or `ng test`, on PATH, from `node_modules/.bin`, or through `npx` (also `npx --yes`), `bunx`, `pnpm`, `pnpm exec` or `yarn`
+- a test task of `turbo` (`turbo run test`), `nx` (`nx test app`, `nx run app:test`, `nx run-many -t lint,test`), `deno task`, `mise run` or `task`. A test task is `test` or a name like `test:unit`
 - `pytest`, `python -m pytest`, `python -m unittest`, also through `py` or `py -3`
 - `node --test`, `go test`, `cargo test`, `cargo nextest`, `dotnet test`, `deno test`
 - `mvn`, `./mvnw`, `gradle` or `./gradlew` (or `.\mvnw`, `.\gradlew`) with `test`, `verify` or `check`, after flags or `clean`, as a task path such as `:app:test`, or as a variant task such as `testDebugUnitTest`
-- `make test`, `make check`, `rspec`, `phpunit`, `rake test`, `rails test` (also through `bundle exec`), `mix test`
+- `make test`, `make check`, `rspec`, `phpunit` and `pest` (also from `vendor/bin`), `rake test`, `rails test` (also through `bundle exec`), `mix test`
 - `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`
 - `tox`, `nox`, `hatch test`, `uvx pytest`
 

@@ -13,6 +13,11 @@ const YARN_WORKSPACE = String.raw`(?:\s+workspace\s+\S+|\s+workspaces\s+foreach(
 // Maven and Gradle flags that take a separate value (`-T 4`, `-pl mod`, `-p sub`).
 const JVM_VALUE_FLAG = String.raw`(?:-(?:T|pl|f|p|P|s|rf|b)|--(?:threads|projects|file|project-dir|settings|build-file))`;
 const JVM_OPTIONS = String.raw`(?:\s+(?:${JVM_VALUE_FLAG}\s+\S+|-(?!(?:x|T|pl|f|p|P|s|rf|b)(?=\s|$))\S+|clean))*`;
+// What runs a JavaScript tool: a package runner (`npx --yes`, `pnpm exec`), the project's
+// node_modules/.bin, or nothing, for a tool on PATH.
+const JS_LAUNCH = String.raw`(?:(?:npx(?:\s+(?:--yes|-y))*|bunx|bun\s+x|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+dlx)?)\s+|(?:\.[\\/])?node_modules[\\/]\.bin[\\/])?`;
+// A test task name: `test`, or `test:unit`, `test-e2e`, `test_api`.
+const TEST_TASK = String.raw`test(?:[:_-][\w:-]+)?`;
 
 // Forms of a test command that run no tests: skip flags, dry runs, listings, non-test sessions.
 const NO_TESTS_RUN = [
@@ -29,7 +34,12 @@ const NO_TESTS_RUN = [
 const BUILTIN_TEST_PATTERNS = [
   new RegExp(String.raw`^(?:npm|pnpm|yarn|bun)${PM_OPTIONS}${YARN_WORKSPACE}\s+(?:run\s+)?test(?:[:_-]\S+)?(?:\s|$)`),
   /^npm\s+t(?:\s|$)/,
-  /^(?:npx|bunx|bun\s+x|pnpm(?:\s+(?:exec|dlx))?|yarn(?:\s+dlx)?)\s+(?:vitest|jest|mocha|playwright\s+test)\b/,
+  new RegExp(String.raw`^${JS_LAUNCH}(?:vitest|jest|mocha|ava|tap|playwright\s+test|cypress\s+run|karma\s+start|ng\s+test)(?=\s|$)`),
+  // Monorepo and task runners with a test task: `turbo run test`, `nx run app:test`, `nx run-many -t lint,test`.
+  new RegExp(String.raw`^${JS_LAUNCH}turbo(?:\s+run)?\s+${TEST_TASK}(?=\s|$)`),
+  new RegExp(String.raw`^${JS_LAUNCH}nx\s+(?:${TEST_TASK}|run\s+\S+:${TEST_TASK})(?=\s|$)`),
+  new RegExp(String.raw`^${JS_LAUNCH}nx\s+(?:run-many|affected)\s(?:.*\s)?(?:-t|--targets?)(?:\s+|=)(?:[\w:-]+,)*${TEST_TASK}(?=[\s,]|$)`),
+  new RegExp(String.raw`^(?:deno\s+task|mise\s+(?:run|r)|task)\s+${TEST_TASK}(?=\s|$)`),
   /^(?:(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+)?pytest\b/,
   /^(?:python3?|py)(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+unittest\b/,
   /^go\s+test\b/,
@@ -42,6 +52,8 @@ const BUILTIN_TEST_PATTERNS = [
   new RegExp(String.raw`^(?:mvn|gradle|\.[\\/](?:mvnw|gradlew))${JVM_OPTIONS}\s+(?:\S*:)?(?:test(?:\w*Test)?|verify|check)(?=\s|$)`),
   /^make\s+(?:test|check)\b/,
   /^(?:bundle\s+exec\s+)?(?:rspec|phpunit)\b/,
+  /^(?:\.[\\/])?vendor[\\/]bin[\\/](?:phpunit|pest)\b/,
+  /^pest(?:\s|$)/,
   /^(?:bundle\s+exec\s+)?(?:rake|(?:bin[\\/])?rails)\s+test\b/,
   /^mix\s+test\b/,
   /^(?:swift|flutter|dart|sbt|just)\s+test\b/,

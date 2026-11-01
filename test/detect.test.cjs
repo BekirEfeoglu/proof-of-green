@@ -177,3 +177,33 @@ test('skip, dry-run and list-only flags do not count as tests', () => {
     assert.equal(isTestCommand(c), true, c);
   }
 });
+
+test('JavaScript and PHP runners count bare, through a launcher or from a local bin folder', () => {
+  const runners = ['vitest', 'vitest run', 'jest --ci', 'npx --yes vitest run', 'npx -y jest', 'npx ava', 'npx tap',
+    'tap', 'npx cypress run', 'npx karma start --single-run', 'node_modules/.bin/vitest run', './node_modules/.bin/jest',
+    'vendor/bin/phpunit', './vendor/bin/pest', 'pest --parallel', 'ng test --watch=false', 'npx ng test'];
+  for (const c of runners) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['npx cypress open', 'npx karma init', 'vendor/bin/phpstan', 'ng build', 'npx vite build', 'npx tsc']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+});
+
+test('monorepo and task runners count their test task', () => {
+  const runners = ['turbo test', 'turbo run test --filter=web', 'npx turbo run test:unit', 'pnpm turbo test',
+    'nx test app', 'npx nx run app:test', 'nx run-many -t test', 'npx nx affected --target=test', 'nx run-many -t lint,test',
+    'deno task test', 'mise run test', 'task test'];
+  for (const c of runners) assert.equal(isTestCommand(c), true, c);
+  for (const c of ['turbo run build', 'nx build app', 'nx run app:build', 'nx run-many -t lint', 'deno task dev',
+    'mise run build', 'task build', 'turbo run build --filter=test']) {
+    assert.equal(isTestCommand(c), false, c);
+  }
+});
+
+test('long monorepo runner commands are classified quickly', () => {
+  for (const s of ['nx run-many ' + '-x '.repeat(5000) + 'build', 'npx nx affected ' + '--a=b '.repeat(5000) + '-t lint',
+    'turbo run ' + 'test:'.repeat(5000) + ' x', 'npx ' + '-y '.repeat(5000) + 'vitest']) {
+    const start = Date.now();
+    isTestCommand(s);
+    assert.ok(Date.now() - start < 500, `${s.slice(0, 20)}... took ${Date.now() - start} ms`);
+  }
+});
