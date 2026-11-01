@@ -1,6 +1,6 @@
 'use strict';
 const path = require('node:path');
-const { isTestCommand } = require('../core/detect.cjs');
+const { isTestCommand, isMaskedTest } = require('../core/detect.cjs');
 const { isCodeFile } = require('../core/codefiles.cjs');
 const { readLedger, appendRecord, startTurn } = require('../core/ledger.cjs');
 const { readToolExitCode } = require('../core/toolresult.cjs');
@@ -56,13 +56,16 @@ function recordTool(out, payload, cwd, config, result) {
   }
   if (SHELL_TOOLS.has(tool)) {
     if (typeof input.command !== 'string') return false;
-    pushShellCommand(out, input.command, cwd, config, {
+    const background = input.run_in_background === true;
+    const record = {
       kind: 'command',
       command: input.command,
       // A background run reports success when it starts, not when the tests finish.
-      isTest: input.run_in_background !== true && isTestCommand(input.command, config.testPatterns),
+      isTest: !background && isTestCommand(input.command, config.testPatterns),
       result,
-    });
+    };
+    if (!background && isMaskedTest(input.command, config.testPatterns)) record.masked = true;
+    pushShellCommand(out, input.command, cwd, config, record);
     return true;
   }
   return false;

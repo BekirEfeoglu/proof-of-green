@@ -129,3 +129,30 @@ test('bad input does not throw and allows', () => {
   assert.deepEqual(decide([edit(1)]), { action: 'allow' });
   assert.deepEqual(decide([edit(1)], null), { action: 'allow' });
 });
+
+const masked = (seq, command = 'npm test | grep ok') => ({ ...cmd(seq, command, false, 'pass'), masked: true });
+
+test('a test with a hidden exit code after the edit gets its own reason', () => {
+  const r = decide([edit(1), masked(2)], { ...ON, suggestedCommand: 'npm test' });
+  assert.equal(r.action, 'block');
+  assert.match(r.reason, /a test command ran after that change, but its exit code was hidden: `npm test \| grep ok`/);
+  assert.match(r.reason, /Suggested command: `npm test`/);
+  assert.doesNotMatch(r.reason, /no test command ran/);
+});
+
+test('a hidden test before the edit does not change the missing-test reason', () => {
+  const r = decide([masked(1), edit(2)], ON);
+  assert.match(r.reason, /no test command ran after the last change/);
+});
+
+test('a failed real test after the edit keeps the failure reason even with a later hidden one', () => {
+  const r = decide([edit(1), failTest(2), masked(3)], ON);
+  assert.match(r.reason, /the last test run after that change failed/);
+});
+
+test('a long hidden command is shown on one line and cut short', () => {
+  const long = `npm test > log 2>&1 && git commit -F - <<'EOF'\n${'x'.repeat(300)}\nEOF\ngit push`;
+  const r = decide([edit(1), masked(2, long)], ON);
+  const shown = /hidden: `([^`]*)`/.exec(r.reason)[1];
+  assert.ok(shown.length <= 120 && shown.endsWith('...') && !shown.includes('\n'), shown);
+});

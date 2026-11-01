@@ -12,7 +12,7 @@ The agent edits `add.js`, runs `npm test`, the test fails, and the agent tries t
 
 > proof-of-green: you changed code (add.js) and the last test run after that change failed. Fix the failures and run the tests again, or report the failing tests to the user. Suggested command: `npm test`. If this project has no tests, or the user asked you not to run them, say so plainly and finish.
 
-If no test ran at all, the first sentence says "no test command ran after the last change" instead. The gate blocks once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
+If no test ran at all, the first sentence says "no test command ran after the last change" instead. If a test ran but its exit code was hidden, for example by `npm test | tail` or `npm test; git push`, the reason names that command and says how to run it so the exit code counts. The gate blocks once per stop attempt, so an agent that still can't get a green run can finish by reporting that.
 
 ## Quick start
 
