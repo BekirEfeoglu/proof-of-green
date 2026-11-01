@@ -221,7 +221,7 @@ Out of scope: running tests itself, judging changes with a language model, enfor
 npm test
 ```
 
-The suite uses Node's built-in test runner and needs no install. CI runs it on Ubuntu, Windows and macOS with Node 18, 20 and 22. Design notes are in `docs/superpowers/specs/`.
+The suite uses Node's built-in test runner and needs no install. CI runs it on Ubuntu, Windows and macOS with Node 18, 20, 22 and 24. Design notes are in `docs/superpowers/specs/`.
 
 ## Prior art
 
