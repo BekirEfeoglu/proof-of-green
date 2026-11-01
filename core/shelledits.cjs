@@ -139,35 +139,98 @@ function psPath(args) {
   return [];
 }
 
+const baseName = (p) => p.replace(/[\\/]+$/, '').replace(/^.*[\\/]/, '');
+const inDir = (dir, src) => `${dir.replace(/[\\/]+$/, '')}/${baseName(src)}`;
+
+// Where copying or moving `sources` to `dest` writes. A lone destination may be a directory, which
+// only the file system knows after the command ran: that candidate carries ifDir for the caller.
+function placed(sources, dest, intoDir) {
+  if (dest.dynamic) return [];
+  const known = sources.filter((s) => !s.dynamic);
+  if (intoDir) return known.map((s) => ({ path: inDir(dest.text, s.text) }));
+  return [{ path: dest.text }, ...known.map((s) => ({ path: inDir(dest.text, s.text), ifDir: dest.text }))];
+}
+
+function copyMoveWrites(args, isMove) {
+  let target = null;
+  let noTarget = false;
+  let optionsDone = false;
+  const operands = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].text;
+    if (optionsDone || args[i].dynamic || !a.startsWith('-') || a === '-') operands.push(args[i]);
+    else if (a === '--') optionsDone = true;
+    else if (a === '-t' || a === '--target-directory') target = args[++i] || null;
+    else if (a.startsWith('--target-directory=')) target = { text: a.slice(19), dynamic: false };
+    else if (a === '-S' || a === '--suffix') i++;
+    else if (a === '-T' || a === '--no-target-directory') noTarget = true;
+  }
+  let sources = operands;
+  let writes;
+  if (target) writes = placed(sources, target, true);
+  else if (operands.length < 2) return [];
+  else {
+    const dest = operands[operands.length - 1];
+    sources = operands.slice(0, -1);
+    if (noTarget) writes = dest.dynamic ? [] : [{ path: dest.text }];
+    else writes = placed(sources, dest, sources.length > 1 || /[\\/]$/.test(dest.text));
+  }
+  const removed = isMove ? sources.filter((s) => !s.dynamic).map((s) => ({ path: s.text })) : [];
+  return [...removed, ...writes];
+}
+
+const PS_ITEM_SWITCHES = new Set(['-force', '-recurse', '-passthru', '-whatif', '-confirm', '-container']);
+
+function psCopyMoveWrites(args, isMove) {
+  let source = null;
+  let dest = null;
+  const positional = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].dynamic ? '' : args[i].text.toLowerCase();
+    if (a === '-path' || a === '-literalpath') source = args[++i] || null;
+    else if (a === '-destination') dest = args[++i] || null;
+    else if (a.startsWith('-')) { if (!PS_ITEM_SWITCHES.has(a)) i++; } else positional.push(args[i]);
+  }
+  source = source || positional.shift() || null;
+  dest = dest || positional.shift() || null;
+  if (!source || !dest) return [];
+  const removed = isMove && !source.dynamic ? [{ path: source.text }] : [];
+  return [...removed, ...placed([source], dest, /[\\/]$/.test(dest.text))];
+}
+
+// Returns { path, ifDir? } for each file the command writes.
 function commandWrites(words) {
   const argv = words.slice();
   while (argv.length && !argv[0].dynamic && /^[A-Za-z_]\w*=/.test(argv[0].text)) argv.shift();
   if (!argv.length || argv[0].dynamic) return [];
   const name = argv[0].text.replace(/^.*[\\/]/, '').replace(/\.exe$/i, '').toLowerCase();
   const args = argv.slice(1);
+  if (name === 'cp' || name === 'mv') return copyMoveWrites(args, name === 'mv');
+  if (name === 'copy-item' || name === 'move-item') return psCopyMoveWrites(args, name === 'move-item');
   let files = [];
   if (name === 'tee') files = args.filter((a) => !a.text.startsWith('-'));
   else if (name === 'sed') files = sedFiles(args);
   else if (name === 'perl') files = perlFiles(args);
   else if (PS_WRITERS.has(name)) files = psPath(args);
-  return files.filter((w) => !w.dynamic).map((w) => w.text);
+  return files.filter((w) => !w.dynamic).map((w) => ({ path: w.text }));
 }
 
-// Each code-relevant write as { path, end }: end is the offset where the writing command ends
-// (its separator, or the command's length), so a caller can tell what runs after the write.
+// Each write as { path, end, ifDir? }: end is the offset where the writing command ends (its
+// separator, or the command's length), so a caller can tell what runs after the write. ifDir:
+// the write happened only if that path is a directory (`cp a.js lib`).
 function shellEdits(command) {
   if (typeof command !== 'string' || !command) return [];
   const tokens = tokenize(command);
   const edits = [];
   let pending = [];
-  const push = (p) => { if (p && !NULL_TARGETS.has(p.toLowerCase())) pending.push(p); };
+  const push = (w) => { if (w.path && !NULL_TARGETS.has(w.path.toLowerCase())) pending.push(w); };
   let words = [];
   const end = (at) => {
-    for (const p of commandWrites(words)) push(p);
-    for (const p of pending) {
-      const old = edits.findIndex((e) => e.path === p);
+    for (const w of commandWrites(words)) push(w);
+    for (const w of pending) {
+      const old = edits.findIndex((e) => e.path === w.path);
       if (old >= 0) edits.splice(old, 1);
-      edits.push({ path: p, end: at });
+      edits.push(w.ifDir === undefined ? { path: w.path, end: at } : { path: w.path, end: at, ifDir: w.ifDir });
     }
     words = [];
     pending = [];
@@ -178,7 +241,7 @@ function shellEdits(command) {
       const target = tokens[i + 1];
       if (target && !target.op) {
         i++;
-        if (!target.dynamic) push(target.text);
+        if (!target.dynamic) push({ path: target.text });
       }
     } else if (t.op === '<') {
       // The file read by < is not an argument of the command.

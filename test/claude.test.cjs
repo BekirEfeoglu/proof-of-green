@@ -539,3 +539,13 @@ test('a test command with a hidden exit code is recorded as masked and named in 
   assert.deepEqual([last.isTest, last.masked], [false, true]);
   assert.match(s.send('stop', {}).reason, /exit code was hidden/);
 });
+
+test('cp into a directory records the copied file, cp onto a file records that file', (t) => {
+  const s = setup(t);
+  fs.mkdirSync(path.join(s.project, 'lib'));
+  s.send('user-prompt', {});
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp tmpl/a.js lib' } });
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'cp tmpl/a.js b.js' } });
+  const edits = s.ledger().records.filter((r) => r.kind === 'edit').map((r) => r.path);
+  assert.deepEqual(edits, [path.join(s.project, 'lib', 'a.js'), path.join(s.project, 'b.js')]);
+});
