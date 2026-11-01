@@ -1,6 +1,6 @@
 {
   "name": "proof-of-green",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Blocks Claude Code and Codex CLI from ending a turn when code changed and no test passed after the last change.",
   "license": "MIT",
   "engines": { "node": ">=18" },

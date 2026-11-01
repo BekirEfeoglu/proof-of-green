@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 (2026-11-01)
+
+- When a test ran but its exit code was hidden (`npm test | tail`, `npm test; git push`), the block reason now names that command and says to join anything after the test with `&&`. Before, it said no test had run.
+- Package manager options before the script name count: `npm --prefix api test`, `npm -w pkg test`, `pnpm -C api test`, `pnpm --filter web test`, `yarn workspace web test`. Gradle and Maven accept flags, `clean` and task paths such as `./gradlew :app:test`; `-x test` still does not count.
+- New test runners: `bundle exec rspec`, `rake test`, `rails test`, `swift test`, `flutter test`, `dart test`, `sbt test`, `zig build test`, `ctest`, `php artisan test`, `composer test`, `just test`, `tox`, `nox`, `hatch test` and `uvx pytest`.
+- `cp`, `mv`, `Copy-Item` and `Move-Item` count as edits. A copy into a directory counts as the file it puts there, and a move also counts its source.
+- `doctor` shows the five newest errors as one dated line each, sorted across ledger folders, instead of the last raw lines of the log.
+
 ## 0.5.0 (2026-11-01)
 
 - Shell commands that write a code file now count as edits, on Claude Code and Codex: `>` and `>>` redirections, `tee`, `sed -i`, `perl -i`, and PowerShell's `Set-Content`, `Add-Content` and `Out-File`. Before, an agent could change code with `sed -i` and stop without a test. Other ways of writing files through the shell are listed under Known limits.
