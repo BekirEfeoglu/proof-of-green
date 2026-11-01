@@ -63,9 +63,19 @@ const readLedger = (dir, sessionId) => readBase(baseFor(dir, sessionId));
 // Either file of a session (<hash>.json or <hash>.jsonl) reads the whole merged ledger.
 const readLedgerFile = (file) => readBase(file.replace(/\.jsonl?$/, ''));
 
+const PRUNE_EVERY_MS = 3600 * 1000;
+const PRUNE_STAMP = '.last-prune';
+
+// Scans the directory at most once an hour: the stamp's mtime is when the last scan started.
+// The stamp is touched first, so parallel hooks rarely scan together.
 function prune(dir) {
+  const stamp = path.join(dir, PRUNE_STAMP);
+  const now = Date.now();
   try {
-    const now = Date.now();
+    if (fs.statSync(stamp).mtimeMs > now - PRUNE_EVERY_MS) return;
+  } catch { /* no stamp yet: scan */ }
+  try { fs.writeFileSync(stamp, ''); } catch { /* scan anyway */ }
+  try {
     for (const name of fs.readdirSync(dir)) {
       const maxAge = /\.jsonl?$/.test(name) ? MAX_AGE_MS : name.endsWith('.tmp') ? TMP_MAX_AGE_MS : null;
       if (maxAge === null) continue;

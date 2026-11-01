@@ -160,7 +160,7 @@ test('file name is the SHA-256 hex of the session id plus .jsonl', (t) => {
   const d = mk(t);
   startTurn(d, 'session/../weird id', '1');
   appendRecord(d, 'session/../weird id', { kind: 'edit', path: 'a' });
-  assert.deepEqual(fs.readdirSync(d), [sha('session/../weird id') + '.jsonl']);
+  assert.deepEqual(fs.readdirSync(d).filter((n) => n !== '.last-prune'), [sha('session/../weird id') + '.jsonl']);
 });
 
 test('appendRecord and startTurn create the directory recursively', (t) => {
@@ -400,4 +400,27 @@ test('other append errors are not retried', (t) => {
   const calls = stubAppend(t, ['ENOSPC']);
   assert.throws(() => appendRecord(d, 's1', { kind: 'edit', path: 'a.js' }), { code: 'ENOSPC' });
   assert.equal(calls(), 1);
+});
+
+test('a second append within the hour does not prune again', (t) => {
+  const d = mk(t);
+  appendRecord(d, 's', { kind: 'edit', path: 'a' });
+  const stale = path.join(d, 'stale.jsonl');
+  fs.writeFileSync(stale, '{}');
+  fs.utimesSync(stale, daysAgo(8), daysAgo(8));
+  appendRecord(d, 's', { kind: 'edit', path: 'b' });
+  assert.equal(fs.existsSync(stale), true);
+});
+
+test('an append prunes again once the last prune is over an hour old', (t) => {
+  const d = mk(t);
+  appendRecord(d, 's', { kind: 'edit', path: 'a' });
+  const stale = path.join(d, 'stale.jsonl');
+  fs.writeFileSync(stale, '{}');
+  fs.utimesSync(stale, daysAgo(8), daysAgo(8));
+  const stamp = path.join(d, '.last-prune');
+  fs.utimesSync(stamp, new Date(Date.now() - 2 * 3600 * 1000), new Date(Date.now() - 2 * 3600 * 1000));
+  appendRecord(d, 's', { kind: 'edit', path: 'b' });
+  assert.equal(fs.existsSync(stale), false);
+  assert.ok(fs.statSync(stamp).mtimeMs > Date.now() - 60 * 1000);
 });
