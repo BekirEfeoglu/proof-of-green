@@ -27,13 +27,18 @@ function tokenize(command) {
       flush();
       if (heredoc) {
         // Skip the body; the command ends at the newline after the delimiter line.
+        // The body is kept on the heredoc token, so patch and git apply can read it.
         const lines = command.slice(i + 1).split('\n');
+        const body = [];
         let skipped = 0;
         let found = false;
         for (const line of lines) {
           skipped += line.length + 1;
-          if (line.replace(/\r$/, '').replace(heredoc.tabs ? /^\t+/ : /^$/, '') === heredoc.delim) { found = true; break; }
+          const text = line.replace(/\r$/, '').replace(heredoc.tabs ? /^\t+/ : /^$/, '');
+          if (text === heredoc.delim) { found = true; break; }
+          body.push(text);
         }
+        heredoc.body = body.join('\n');
         i += found ? skipped - 1 : command.length;
         heredoc = null;
         continue;
@@ -64,6 +69,7 @@ function tokenize(command) {
       const m = /^\s*(['"]?)([A-Za-z_][\w-]*)\1/.exec(command.slice(i + (tabs ? 3 : 2)));
       if (m) {
         heredoc = { delim: m[2], tabs };
+        tokens.push({ op: '<<', doc: heredoc });
         i += (tabs ? 3 : 2) + m[0].length - 1;
       } else i += 1;
     } else if (c === '<') {
@@ -280,6 +286,7 @@ function applyPatches(args, stdin, at) {
     else if (p) strip = Number(p[1]);
   }
   if (reportOnly && !apply) return [];
+  if (!patches.length && stdin && stdin.body !== undefined) return [{ patchText: stdin.body, strip, repoRoot: true }];
   const read = patches.length ? patches : stdin ? [stdin] : [];
   return read.filter((w) => !w.dynamic).map((w) => ({ patch: w.text, strip, repoRoot: true }));
 }
@@ -337,7 +344,8 @@ function patchWrites(args, stdin) {
   const strip = opts['-p'] && /^\d+$/.test(opts['-p'].text) ? Number(opts['-p'].text) : Infinity;
   const input = opts['-i'] ? { ...opts['-i'], text: at(opts['-i'].text) } : stdin;
   if (!input || input.dynamic) return [];
-  return [{ patch: input.text, strip, ...(base ? { base: base.text } : {}) }];
+  const from = input.body !== undefined ? { patchText: input.body } : { patch: input.text };
+  return [{ ...from, strip, ...(base ? { base: base.text } : {}) }];
 }
 
 // Returns { path, ifDir?, unlessExists? } for each file the command writes, or { patch, strip,
@@ -368,7 +376,7 @@ function shellEdits(command) {
   const tokens = tokenize(command);
   const edits = [];
   let pending = [];
-  const push = (w) => { if (w.patch || (w.path && !NULL_TARGETS.has(w.path.toLowerCase()))) pending.push(w); };
+  const push = (w) => { if (w.patch || w.patchText !== undefined || (w.path && !NULL_TARGETS.has(w.path.toLowerCase()))) pending.push(w); };
   let words = [];
   let stdin = null;
   const end = (at) => {
@@ -393,7 +401,8 @@ function shellEdits(command) {
     } else if (t.op === '<') {
       // The file read by < is not an argument of the command; patch and git apply read it as the diff.
       if (tokens[i + 1] && !tokens[i + 1].op) stdin = tokens[++i];
-    } else if (t.op) end(t.at);
+    } else if (t.op === '<<') stdin = t.doc;
+    else if (t.op) end(t.at);
     else words.push(t);
   }
   end(command.length);

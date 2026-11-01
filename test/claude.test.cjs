@@ -640,3 +640,13 @@ test('a patch that cannot be read records nothing', (t) => {
   s.send('post-tool', { tool_name: 'Bash', tool_input: { command: 'git apply missing.patch' } });
   assert.deepEqual(s.ledger().records.filter((r) => r.kind === 'edit'), []);
 });
+
+test('git apply with a heredoc patch records its files before a test in the same command', (t) => {
+  const s = setup(t);
+  s.send('user-prompt', {});
+  const command = "git apply <<'EOF'\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-x\n+y\nEOF\nnpm test";
+  s.send('post-tool', { tool_name: 'Bash', tool_input: { command } });
+  const records = s.ledger().records;
+  assert.deepEqual(records.map((r) => r.kind), ['edit', 'command']);
+  assert.equal(records[0].path, path.join(s.project, 'src', 'a.ts'));
+});

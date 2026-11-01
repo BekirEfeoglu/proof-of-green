@@ -227,3 +227,11 @@ test('patchPaths lists the files a unified diff changes', () => {
   assert.deepEqual(patchPaths('--- "a/q\\"x.js"\n+++ "b/q\\"x.js"\n', 1), ['q"x.js']);
   assert.deepEqual(patchPaths('', 1), []);
 });
+
+test('git apply and patch read a heredoc as the patch text', () => {
+  assert.deepEqual(writes("git apply <<'EOF'\n--- a/x.js\n+++ b/x.js\n@@ -1 +1 @@\nEOF\nnpm test"), [
+    { patchText: '--- a/x.js\n+++ b/x.js\n@@ -1 +1 @@', strip: 1, repoRoot: true }]);
+  assert.deepEqual(writes('patch -p0 <<-EOF\n\t--- x.js\n\t+++ x.js\n\tEOF'), [{ patchText: '--- x.js\n+++ x.js', strip: 0 }]);
+  assert.deepEqual(writes('git apply --check <<EOF\n--- a/x.js\n+++ b/x.js\nEOF'), []);
+  assert.deepEqual(writes('git apply fix.patch <<EOF\nignored\nEOF'), [{ patch: 'fix.patch', strip: 1, repoRoot: true }]);
+});

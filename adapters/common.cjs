@@ -99,14 +99,18 @@ function gitRoot(dir) {
 }
 
 // The files a `git apply` or `patch` changed, read from the patch after the command ran. git apply
-// takes the paths from the repository root, patch from its directory. A missing or large patch gives none.
-function patchTargets(e, cwd) {
-  let text;
+// takes the paths from the repository root, patch from its directory. A heredoc patch comes as
+// patchText. A missing or large patch file gives none.
+function readPatch(file) {
   try {
-    const file = path.resolve(cwd, e.patch);
-    if (fs.statSync(file).size > PATCH_MAX_BYTES) return [];
-    text = fs.readFileSync(file, 'utf8');
-  } catch { return []; }
+    if (fs.statSync(file).size > PATCH_MAX_BYTES) return null;
+    return fs.readFileSync(file, 'utf8');
+  } catch { return null; }
+}
+
+function patchTargets(e, cwd) {
+  const text = e.patchText !== undefined ? e.patchText : readPatch(path.resolve(cwd, e.patch));
+  if (text === null) return [];
   const dir = path.resolve(cwd, e.base || '.');
   const from = e.repoRoot ? gitRoot(dir) || dir : dir;
   return patchPaths(text, e.strip).map((p) => path.resolve(from, p));
@@ -123,7 +127,7 @@ function pushShellCommand(out, script, cwd, config, record) {
   for (const e of shellEdits(script)) {
     if (e.ifDir !== undefined && !isDirectory(path.resolve(cwd, e.ifDir))) continue;
     if (e.unlessExists !== undefined && fs.existsSync(path.resolve(cwd, e.unlessExists))) continue;
-    const targets = e.patch !== undefined ? patchTargets(e, cwd) : [path.resolve(cwd, e.path)];
+    const targets = e.path === undefined ? patchTargets(e, cwd) : [path.resolve(cwd, e.path)];
     const files = targets.flatMap((abs) =>
       isDirectory(abs) ? codeFilesUnder(abs, config) : isCodeFile(abs, codeOpts(config)) ? [abs] : []);
     if (files.length === 0) continue;

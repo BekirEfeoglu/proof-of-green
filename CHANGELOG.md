@@ -3,7 +3,7 @@
 ## Unreleased
 
 - `git checkout` and `git restore` count as edits of the paths they name: `git checkout -- a.js`, `git checkout HEAD~1 -- src/`, `git restore .`, also with `git -C dir`. `git restore --staged` alone, `git checkout -b` and `git switch` don't count.
-- `git apply` and `patch` count the code files named in the patch, with `-p`, `-d` and `-i` applied. git apply's paths are taken from the repository root. A patch read through `<` counts too.
+- `git apply` and `patch` count the code files named in the patch, with `-p`, `-d` and `-i` applied. git apply's paths are taken from the repository root. A patch read through `<` or given as a heredoc (`git apply <<'EOF'`) counts too.
 - `git checkout` left the Known limits list. Git commands that change the whole working tree are listed there instead.
 - Old ledgers are pruned at most once an hour instead of on every hook call, so a hook no longer scans the ledger folder each time. A `.last-prune` file in that folder records the last scan.
 
